@@ -1,0 +1,4 @@
+src/network/net_init.c:39:6:ethernet_link_status_updated	0	static
+src/network/net_init.c:56:6:ethernet_link_thread	112	static
+src/network/net_init.c:140:6:ethernet_init	8	static
+src/network/net_init.c:157:6:ethernet_process	16	static

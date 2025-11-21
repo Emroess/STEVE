@@ -1,0 +1,5 @@
+src/valve/valve_nvm.c:112:17:erase_nvm_sector	40	static
+src/valve/valve_nvm.c:174:10:valve_nvm_init	240	static
+src/valve/valve_nvm.c:204:10:valve_nvm_load_presets	200	static
+src/valve/valve_nvm.c:215:29:valve_nvm_get_default_presets	0	static
+src/valve/valve_nvm.c:221:10:valve_nvm_save_presets	240	static

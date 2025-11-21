@@ -1,0 +1,8 @@
+src/syscalls.c:19:27:_close	0	static
+src/syscalls.c:25:27:_fstat	0	static
+src/syscalls.c:32:27:_getpid	0	static
+src/syscalls.c:37:27:_isatty	0	static
+src/syscalls.c:43:27:_kill	0	static
+src/syscalls.c:50:27:_lseek	0	static
+src/syscalls.c:58:27:_read	0	static
+src/syscalls.c:66:27:_write	0	static

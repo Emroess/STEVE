@@ -1,0 +1,4 @@
+src/app/performance_manager.c:10:1:perf_get_stats	8	static
+src/app/performance_manager.c:20:1:perf_get_rms_values	8	static
+src/app/performance_manager.c:30:1:perf_dump_csv	8	static
+src/app/performance_manager.c:46:1:perf_stream_raw	0	static

@@ -1,0 +1,9 @@
+src/app/perfmon.c:44:1:perfmon_init	4	static
+src/app/perfmon.c:74:1:perfmon_set_budget_us	0	static
+src/app/perfmon.c:80:1:perfmon_guard_event	0	static
+src/app/perfmon.c:94:1:perfmon_push	24	static
+src/app/perfmon.c:141:1:perfmon_snapshot	200	static
+src/app/perfmon.c:126:1:perfmon_stats	120	static
+src/app/perfmon.c:541:1:perfmon_get_fill_count	0	static
+src/app/perfmon.c:547:1:perfmon_get_write_index	0	static
+src/app/perfmon.c:553:1:perfmon_get_sample	0	static

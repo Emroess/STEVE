@@ -1,0 +1,109 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pysteve"
+version = "0.1.0"
+description = "Python client for STEVE haptic valve simulation system"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "STEVE Team", email = "steve@example.com"}
+]
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Robotics",
+]
+keywords = ["robotics", "haptics", "simulation", "valve", "mujoco", "gymnasium", "isaac-sim"]
+
+dependencies = [
+    "requests>=2.28.0",
+    "numpy>=1.21.0",
+]
+
+[project.optional-dependencies]
+mujoco = [
+    "mujoco>=2.3.0",
+]
+gymnasium = [
+    "gymnasium>=0.28.0",
+    "stable-baselines3>=2.0.0",
+]
+isaac = [
+    # Isaac Sim packages typically installed separately
+    # Users should follow NVIDIA Isaac Sim installation guide
+]
+async = [
+    "aiohttp>=3.8.0",
+]
+data = [
+    "h5py>=3.7.0",
+    "pandas>=1.5.0",
+]
+viz = [
+    "matplotlib>=3.5.0",
+    "plotly>=5.11.0",
+]
+ros = [
+    "rclpy>=3.0.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=22.0.0",
+    "ruff>=0.0.280",
+    "mypy>=1.0.0",
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.2.0",
+]
+all = [
+    "pysteve[mujoco,gymnasium,async,data,viz,ros]",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/steve_can"
+Documentation = "https://pysteve.readthedocs.io"
+Repository = "https://github.com/yourusername/steve_can"
+"Bug Tracker" = "https://github.com/yourusername/steve_can/issues"
+
+[project.scripts]
+pysteve-discover = "pysteve.cli:discover_devices"
+pysteve-monitor = "pysteve.cli:monitor_device"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pysteve*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py38", "py39", "py310", "py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+select = ["E", "F", "W", "I", "N", "UP"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=pysteve --cov-report=html --cov-report=term"

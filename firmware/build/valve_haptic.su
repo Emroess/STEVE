@@ -1,0 +1,14 @@
+src/valve/valve_haptic.c:283:13:valve_fdcan_error_callback	8	static
+src/valve/valve_haptic.c:303:10:valve_haptic_init	24	static
+src/valve/valve_haptic.c:377:10:valve_haptic_load_preset	24	static
+src/valve/valve_haptic.c:398:10:valve_haptic_stage_config	24	static
+src/valve/valve_haptic.c:440:10:valve_haptic_start	64	static
+src/valve/valve_haptic.c:625:6:valve_haptic_stop	8	static
+src/valve/valve_haptic.c:893:6:valve_haptic_process	80	static
+src/valve/valve_haptic.c:1008:6:valve_haptic_timer_isr	0	static
+src/valve/valve_haptic.c:1029:6:TIM6_DAC_IRQHandler	0	static
+src/valve/valve_haptic.c:1042:21:valve_haptic_get_state	0	static
+src/valve/valve_haptic.c:1048:22:valve_haptic_get_config	0	static
+src/valve/valve_haptic.c:1064:1:valve_haptic_get_loop_timing	4	static
+src/valve/valve_haptic.c:1082:23:valve_haptic_get_context	0	static
+src/valve/valve_haptic.c:1094:1:valve_haptic_calc_settling_time_ms	112	static

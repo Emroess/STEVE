@@ -1,0 +1,11 @@
+src/network/network_manager.c:23:1:network_get_info	40	static
+src/network/network_manager.c:57:1:network_set_static_ip	104	static
+src/network/network_manager.c:96:1:network_set_dhcp	0	static
+src/network/network_manager.c:104:1:network_ping	16	static
+src/network/network_manager.c:121:1:network_task	8	static
+src/network/network_manager.c:131:1:network_http_start	8	static
+src/network/network_manager.c:139:1:network_http_stop	8	static
+src/network/network_manager.c:146:1:network_http_get_status	16	static
+src/network/network_manager.c:157:1:network_http_set_logging	8	static
+src/network/network_manager.c:164:1:network_stream_start	8	static
+src/network/network_manager.c:172:1:network_stream_stop	8	static

@@ -1,0 +1,29 @@
+Info : Listening on port 6666 for tcl connections
+Info : Listening on port 4444 for telnet connections
+Info : clock speed 1800 kHz
+Info : STLINK V3J16M9 (API v3) VID:PID 0483:374E
+Info : Target voltage: 3.275462
+Info : [stm32h7x.cpu0] Cortex-M7 r1p1 processor detected
+Info : [stm32h7x.cpu0] target has 8 breakpoints, 4 watchpoints
+Info : starting gdb server for stm32h7x.cpu0 on pipe
+Info : accepting 'gdb' connection from pipe
+Warn : target was in unknown state when halt was requested
+[stm32h7x.cpu0] halted due to debug-request, current mode: Thread 
+xPSR: 0x81000000 pc: 0x080018be msp: 0x2001ff48
+Info : Device: STM32H74x/75x
+Info : flash size probed value 2048k
+Info : STM32H7 flash has dual banks
+Info : Bank (0) size is 1024 kb, base address is 0x08000000
+[stm32h7x.cpu0] halted due to debug-request, current mode: Thread 
+xPSR: 0x01000000 pc: 0x08002160 msp: 0x20020000
+[stm32h7x.cpu0] halted due to debug-request, current mode: Thread 
+xPSR: 0x01000000 pc: 0x08002160 msp: 0x20020000
+Info : Unable to match requested speed 4000 kHz, using 3300 kHz
+Info : Unable to match requested speed 4000 kHz, using 3300 kHz
+Info : Padding image section 0 at 0x08000298 with 40 bytes
+Info : Padding image section 1 at 0x080025b0 with 16 bytes (bank write end alignment)
+[stm32h7x.cpu0] halted due to debug-request, current mode: Thread 
+xPSR: 0x01000000 pc: 0x08002160 msp: 0x20020000
+[stm32h7x.cpu0] halted due to debug-request, current mode: Thread 
+xPSR: 0x01000000 pc: 0x08002160 msp: 0x20020000
+Info : dropped 'gdb' connection
