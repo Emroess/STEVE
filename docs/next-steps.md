@@ -34,7 +34,7 @@ If you discover bugs or unexpected behavior:
 3. Include relevant logs and error messages
 4. Share your findings with the development team
 
-Your bug reports help make STEVE better for everyone!
+Your bug reports help make STEVE better for everyone, thank you.
 
 ---
 
@@ -60,7 +60,6 @@ We value constructive feedback that helps us understand your needs:
 - Suggest specific enhancements or alternatives
 - Share ideas for new features or capabilities
 
-Your insights drive our development roadmap!
 
 ---
 
@@ -96,7 +95,7 @@ One of the most promising areas for enhancement is moving the FOC motor control 
 - Can we push control rates beyond current capabilities?
 - What are the implications for stability and passivity?
 
-This represents an exciting area for experimentation and could significantly enhance STEVE's performance characteristics. We welcome collaboration from engineers interested in motor control and real-time embedded systems!
+This represents an exciting area for experimentation and could significantly enhance STEVE's performance characteristics. We welcome collaboration from engineers interested in motor control and real-time embedded systems.
 
 ### 2. Touchscreen Interface for Preset Selection
 
@@ -233,7 +232,7 @@ Our development priorities are guided by community feedback and practical needs.
 - Research partnerships and collaborative projects
 
 **Your Input Shapes Our Direction:**
-We're committed to developing features that provide real value to the robotics and research community. Please share your thoughts on these priorities and suggest additional directions!
+We're committed to developing features that provide real value to the robotics and research community. Please share your thoughts on these priorities and suggest additional directions.
 
 ---
 
@@ -243,13 +242,11 @@ We're committed to developing features that provide real value to the robotics a
 
 We're building STEVE together with the community, and your participation makes the difference:
 
-**Questions?** We're here to help you succeed with STEVE.
+**Questions?** We're here to help.
 
 **Ideas?** We want to hear your vision for haptic simulation.
 
 **Discoveries?** Share what you learn with others.
-
-**Challenges?** Let's solve them together.
 
 ---
 
