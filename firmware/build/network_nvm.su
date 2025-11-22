@@ -1,3 +1,0 @@
-src/network/network_nvm.c:8:10:network_nvm_calculate_checksum	0	static
-src/network/network_nvm.c:77:6:network_nvm_save	176	static
-src/network/network_nvm.c:99:6:network_nvm_load	12	static
