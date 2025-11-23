@@ -212,7 +212,7 @@ Note: Motor will move during calibration
 
 Wait for calibration to complete (a few seconds).
 
-### 3. Enable ODrive
+### 3. Enable ODrive (Only use if Manual Odrive Control is Neeeded)
 
 ```
 > odrive_enable
