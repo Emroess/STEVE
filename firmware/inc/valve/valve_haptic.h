@@ -6,8 +6,9 @@
  *
  * AUTONOMOUS OPERATION:
  * The valve control loop operates entirely independently from the main
- * application once started. It executes deterministically in the TIM6 ISR
- * at exactly 1kHz (1ms period). No periodic service calls are required.
+ * application once started. TIM6 ISR latches data at exactly 1kHz (1ms period)
+ * and PendSV executes the control loop deterministically. No periodic service
+ * calls are required.
  *
  * Usage:
  *   1. Initialize: valve_haptic_init()
@@ -26,6 +27,7 @@
 #include <stdint.h>
 #include "status.h"
 #include "valve_filters.h"
+#include "protocols/can_simple.h"
 
 /* Valve preset presets - user-friendly resistance levels */
 typedef enum {
@@ -102,6 +104,7 @@ struct valve_diagnostics_simple {
     uint32_t heartbeat_age_ms; /* Age of heartbeat telemetry */
     status_t last_can_status;  /* Last CAN operation status */
     uint8_t can_retry_count;   /* CAN retries in current iteration */
+    uint32_t loop_overrun_events; /* Count of missed/overrun control iterations */
     struct valve_safety_diagnostics safety; /* Safety event tracking */
     /* Phase 2: Loop timing diagnostics */
     uint32_t loop_time_min_us;  /* Minimum loop execution time (µs) */
@@ -112,11 +115,17 @@ struct valve_diagnostics_simple {
     uint64_t t_us_accum;         /* Monotonic timestamp (µs) for stream alignment */
     uint32_t last_loop_time_us;  /* Instantaneous loop time (µs) for this iteration */
     uint32_t sample_seq;         /* Monotonic sample sequence counter */
+    uint32_t last_sample_timestamp_us; /* Last latched sample timestamp (µs) */
     /* Encoder data age statistics */
     uint32_t encoder_age_min_us;  /* Minimum encoder data age (µs) */
     uint32_t encoder_age_max_us;  /* Maximum encoder data age (µs) */
     uint32_t encoder_age_sum_us;  /* Sum for median/average calculation (µs) */
     uint32_t encoder_age_count;   /* Number of encoder age samples */
+    /* PendSV scheduling delay diagnostics */
+    uint32_t pendsv_delay_min_us; /* Minimum PendSV delay from TIM6 trigger (µs) */
+    uint32_t pendsv_delay_max_us; /* Maximum PendSV delay from TIM6 trigger (µs) */
+    uint32_t pendsv_delay_sum_us; /* Sum for average calculation (µs) */
+    uint32_t pendsv_delay_count;  /* Number of PendSV delay samples */
 };
 
 /* Simplified unified valve state */
@@ -178,6 +187,9 @@ struct valve_state {
 #define VALVE_TORQUE_LIMIT_MARGIN        1.1f          /* Safety margin for torque limit checks */
 #define VALVE_VELOCITY_DEADZONE_DPS      0.1f          /* Velocity below this is considered zero */
 
+/* Loop overrun emergency threshold */
+#define VALVE_OVERRUN_EMERGENCY_THRESHOLD 10U          /* E-stop after 10 consecutive overruns */
+
 /* Safety thresholds for Phase 1 implementation */
 #define VALVE_ENCODER_STALE_THRESHOLD_MS  10U          /* Critical: encoder data >10ms old triggers E-stop */
 #define VALVE_ENCODER_WARNING_THRESHOLD_MS 5U          /* Warning: encoder data >5ms old */
@@ -211,8 +223,8 @@ struct valve_state {
 /* Safety limits */
 #define VALVE_MAX_TORQUE_LIMIT_NM      30.0f           /* Maximum allowed torque limit */
 #define VALVE_MAX_STOP_CUSHION_DEG     45.0f           /* Maximum stop cushion angle */
-#define VALVE_ODRIVE_VEL_LIMIT_TURNS_PER_S 8.0f        /* ODrive velocity limit (turns/s) */
-#define VALVE_ODRIVE_CURRENT_LIMIT_A    10.0f          /* ODrive current limit (amps) */
+#define VALVE_ODRIVE_VEL_LIMIT_TURNS_PER_S 20.0f        /* ODrive velocity limit (turns/s) */
+#define VALVE_ODRIVE_CURRENT_LIMIT_A    120.0f          /* ODrive current limit (amps) Odrive multiples this by the motor torque constant 120*0.083=10AMPS */
 
 /* Valve context (combines simplified state and config) */
 struct valve_context {
@@ -221,7 +233,22 @@ struct valve_context {
     struct valve_config staged_config;
     uint32_t staged_field_mask;
     volatile uint8_t staged_pending;
-    /* Autonomous operation: control loop executes directly in TIM6 ISR */
+    /* Double-buffered ISR data latched in TIM6 and consumed in PendSV */
+    struct valve_isr_sample {
+        uint32_t timestamp_us;       /* ISR timestamp (DWT, µs) */
+        uint32_t pendsv_trigger_us;  /* Timestamp when PendSV was triggered (µs) */
+        struct can_simple_encoder_estimates encoder;
+        uint32_t encoder_age_ms;
+        status_t encoder_status;
+        struct can_simple_heartbeat heartbeat;
+        uint32_t heartbeat_age_ms;
+        status_t heartbeat_status;
+        uint32_t seq;                /* Monotonic sample sequence */
+    } isr_buffer[2];
+    volatile uint8_t isr_write_idx;   /* Write index for ISR (0 or 1) */
+    volatile uint8_t pendsv_pending;  /* Tracks posted-but-not-run PendSV */
+    uint32_t isr_seq;                 /* Sequence counter for samples */
+    uint32_t last_processed_seq;      /* Last sequence processed in PendSV */
 };
 
 /* Public API */
@@ -232,6 +259,9 @@ void valve_haptic_stop(struct valve_context *ctx);       /* Stop autonomous cont
 void valve_haptic_process(struct valve_context *ctx);    /* Internal: called by TIM6 ISR */
 void valve_haptic_timer_isr(void);                       /* Internal: TIM6 ISR callback */
 void TIM6_DAC_IRQHandler(void);                          /* TIM6 interrupt handler */
+void PendSV_Handler(void);                               /* PendSV handler dispatch */
+void valve_haptic_pendsv_handler(void);                  /* Internal: called by PendSV_Handler */
+void valve_haptic_process_with_latched(struct valve_context *ctx, const struct valve_isr_sample *latched); /* Internal: called by PendSV */
 struct valve_state *valve_haptic_get_state(struct valve_context *ctx);
 struct valve_config *valve_haptic_get_config(struct valve_context *ctx);
 struct valve_context *valve_haptic_get_context(void);

@@ -19,7 +19,6 @@
 #include "valve_presets.h"
 #include "network_manager.h"
 #include "network_nvm.h"
-#include "perfmon.h"
 #include "odrive_manager.h"
 #include "performance_manager.h"
 #include "drivers/uart.h"
@@ -1008,100 +1007,7 @@ cli_cmd_can_status(struct cli_context *ctx, int argc, char *argv[])
 	return 0;
 }
 
-/*
- * cli_cmd_perf_stats - Show performance statistics
- */
-static int
-cli_cmd_perf_stats(struct cli_context *ctx, int argc, char *argv[])
-{
-	(void)argc;
-	(void)argv;
-	
-	struct perfmon_snapshot snapshot;
-	status_t status = perf_get_stats(&snapshot);
-	if (status != STATUS_OK) {
-		uart_write_string(ctx->uart, "\r\nFailed to get performance stats\r\n", 100);
-		uart_printf(ctx->uart, "Error: %s\r\n", status_to_string(status));
-		return 0;
-	}
-	
-	uart_write_string(ctx->uart, "\r\nPerformance Statistics:\r\n", 100);
-	uart_printf(ctx->uart, "Sample count:       %u\r\n", snapshot.sample_count);
-	uart_write_string(ctx->uart, "\r\nMotion:\r\n", 100);
-	uart_printf(ctx->uart, "  Position RMS:     %.6f\r\n", snapshot.motion.pos_rms);
-	uart_printf(ctx->uart, "  Velocity RMS:     %.6f\r\n", snapshot.motion.vel_rms);
-	uart_printf(ctx->uart, "  Torque RMS:       %.6f\r\n", snapshot.motion.tau_rms);
-	uart_printf(ctx->uart, "  Pos peak-to-peak: %.6f\r\n", snapshot.motion.pos_peak_to_peak);
-	uart_printf(ctx->uart, "  Vel peak-to-peak: %.6f\r\n", snapshot.motion.vel_peak_to_peak);
-	uart_write_string(ctx->uart, "\r\nTiming:\r\n", 100);
-	uart_printf(ctx->uart, "  Total: %u/%u/%.1f us (min/max/avg)\r\n",
-		snapshot.timing.total_min_us, snapshot.timing.total_max_us, snapshot.timing.total_mean_us);
-	uart_printf(ctx->uart, "  Physics: %u/%u/%.1f us\r\n",
-		snapshot.timing.physics_min_us, snapshot.timing.physics_max_us, snapshot.timing.physics_mean_us);
-	uart_write_string(ctx->uart, "\r\nGuard Events:\r\n", 100);
-	uart_printf(ctx->uart, "  Torque clamps:    %lu\r\n", (unsigned long)snapshot.guard.torque_clamps);
-	uart_printf(ctx->uart, "  Rate limits:      %lu\r\n", (unsigned long)snapshot.guard.rate_limits);
-	uart_printf(ctx->uart, "  Stability events: %lu\r\n", (unsigned long)snapshot.guard.stability_events);
-	return 0;
-}
 
-/*
- * cli_cmd_perf_rms - Show RMS values for position, velocity, and torque
- */
-static int
-cli_cmd_perf_rms(struct cli_context *ctx, int argc, char *argv[])
-{
-	(void)argc;
-	(void)argv;
-	
-	float pos_rms, vel_rms, tau_rms;
-	status_t status = perf_get_rms_values(&pos_rms, &vel_rms, &tau_rms);
-	if (status != STATUS_OK) {
-		uart_write_string(ctx->uart, "\r\nFailed to get RMS values\r\n", 100);
-		uart_printf(ctx->uart, "Error: %s\r\n", status_to_string(status));
-		return 0;
-	}
-	
-	uart_write_string(ctx->uart, "\r\nRMS Values:\r\n", 100);
-	uart_printf(ctx->uart, "Position RMS: %.6f\r\n", pos_rms);
-	uart_printf(ctx->uart, "Velocity RMS: %.6f\r\n", vel_rms);
-	uart_printf(ctx->uart, "Torque RMS:   %.6f\r\n", tau_rms);
-	return 0;
-}
-
-/*
- * uart_output_callback - Helper for perf commands that output to UART
- */
-static struct uart_handle *g_perf_uart = NULL;
-
-static void
-uart_output_callback(const char *str)
-{
-	if (g_perf_uart != NULL) {
-		uart_write_string(g_perf_uart, str, 1000);
-	}
-}
-
-/*
- * cli_cmd_perf_dump - Dump performance data as CSV
- */
-static int
-cli_cmd_perf_dump(struct cli_context *ctx, int argc, char *argv[])
-{
-	(void)argc;
-	(void)argv;
-	
-	g_perf_uart = ctx->uart;
-	uart_write_string(ctx->uart, "\r\nPerformance Data (CSV):\r\n", 100);
-	status_t status = perf_dump_csv(uart_output_callback);
-	g_perf_uart = NULL;
-	
-	if (status != STATUS_OK) {
-		uart_write_string(ctx->uart, "\r\nFailed to dump performance data\r\n", 100);
-		uart_printf(ctx->uart, "Error: %s\r\n", status_to_string(status));
-	}
-	return 0;
-}
 
 /*
  * cli_cmd_valve_preset - Load a valve preset configuration
@@ -1217,9 +1123,6 @@ const struct cli_command cli_commands[] = {
 	{"odrive_status", cli_cmd_odrive_status, "Show ODrive status"},
 	{"odrive_torque", cli_cmd_odrive_torque, "Set ODrive torque command"},
 	{"odrive_velocity", cli_cmd_odrive_velocity, "Set ODrive velocity command"},
-	{"perf_dump", cli_cmd_perf_dump, "Dump performance data as CSV"},
-	{"perf_rms", cli_cmd_perf_rms, "Show RMS values for position, velocity, and torque"},
-	{"perf_stats", cli_cmd_perf_stats, "Show performance statistics"},
 	{"ping", cli_cmd_ping, "Ping an IP address to test network connectivity"},
 	{"setip", cli_cmd_setip, "Set static IP address, subnet mask, and gateway"},
 	{"valve_damping", cli_cmd_valve_damping, "Set viscous damping (N·m·s/rad)"},

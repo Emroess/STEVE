@@ -539,13 +539,34 @@ void rest_api_handle_post_control(struct tcp_pcb *tpcb, char *body, int len) {
       }
       i++;
     } else if (jsoneq(body, &t[i], "preset") == 0) {
-      if (!rest_token_int(body, val_tok, &preset)) {
+      if (!rest_token_string(body, val_tok, token_buf, sizeof(token_buf))) {
         rest_send_json_error(tpcb, 400, "invalid_preset");
         return;
       }
 
-      if (preset < 0 || preset >= VALVE_PRESET_COUNT) {
-        rest_send_json_error(tpcb, 400, "invalid_preset_index");
+      // Match preset by name (case-insensitive)
+      preset = -1;
+      for (int preset_idx = 0; preset_idx < VALVE_PRESET_COUNT; preset_idx++) {
+        // Simple case-insensitive comparison
+        const char *a = token_buf;
+        const char *b = preset_params[preset_idx].name;
+        bool match = true;
+        for (int j = 0; a[j] || b[j]; j++) {
+          char ca = a[j] >= 'A' && a[j] <= 'Z' ? a[j] + 32 : a[j];
+          char cb = b[j] >= 'A' && b[j] <= 'Z' ? b[j] + 32 : b[j];
+          if (ca != cb) {
+            match = false;
+            break;
+          }
+        }
+        if (match) {
+          preset = preset_idx;
+          break;
+        }
+      }
+      
+      if (preset < 0) {
+        rest_send_json_error(tpcb, 400, "unsupported_preset");
         return;
       }
       has_preset = 1U;

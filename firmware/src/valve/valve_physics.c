@@ -306,18 +306,17 @@ float valve_physics_calculate_torque_hil(
         return 0.0f;
     }
 
-    /* Convert from firmware units (degrees, rad/s) to HIL units (turns, turns/s) */
+    /* Convert position and velocity to turns for wall calculations */
     float degrees_per_turn = cfg->degrees_per_turn;
     if (degrees_per_turn <= 0.0f) {
         degrees_per_turn = VALVE_DEFAULT_DEGREES_PER_TURN; /* Fallback */
     }
 
     float theta_turns = position_deg / degrees_per_turn;
-    float omega_turns_per_s = (omega_rad_s * VALVE_RAD_TO_DEG) / degrees_per_turn;
 
     /* Convert endpoint positions from degrees to turns */
-    float theta_off = cfg->closed_position_deg / degrees_per_turn;
-    float theta_on = cfg->open_position_deg / degrees_per_turn;
+    float theta_off_turns = cfg->closed_position_deg / degrees_per_turn;
+    float theta_on_turns = cfg->open_position_deg / degrees_per_turn;
 
     /* Get HIL physics parameters */
     float b = cfg->hil_b_viscous_nm_s_per_rad;
@@ -329,8 +328,8 @@ float valve_physics_calculate_torque_hil(
 
     /* Compute virtual torque using HIL physics */
     float virtual_torque = valve_hil_compute_virtual_torque(
-        theta_turns, omega_turns_per_s,
-        theta_off, theta_on,
+        theta_turns, (omega_rad_s * VALVE_RAD_TO_DEG) / degrees_per_turn,
+        theta_off_turns, theta_on_turns,
         b, tau_c, kw, cw, eps, max_torque);
 
     /* Apply final safety clamping */

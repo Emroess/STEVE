@@ -10,10 +10,10 @@
 #include "valve_filters.h"
 #include "protocols/can_simple.h"
 #include "drivers/fdcan.h"
-#include "perfmon.h"
 #include "board.h"
 #include "stm32h7xx.h"
 #include "stm32h753xx.h"
+#include "core_cm7.h"  /* For SCB and PendSV */
 #include "arm_math.h"
 #include <string.h>
 #include <stdbool.h>
@@ -28,7 +28,7 @@ static uint32_t last_heartbeat_check_ms = 0;
 static float velocity_filter_state = 0.0f;
 static bool velocity_filters_initialized = false;
 #define SYSTEM_CORE_CLOCK_HZ 400000000U
-#define VALVE_CAN_FAILURE_MAX 5U
+#define VALVE_CAN_FAILURE_MAX 3U
 #define VALVE_ENCODER_STALE_MS 10U
 #define VALVE_ENCODER_TIMEOUT_MS 50U
 #define VALVE_HEARTBEAT_TIMEOUT_MS 500U
@@ -39,6 +39,7 @@ static bool velocity_filters_initialized = false;
 #define VALVE_MIN_VELOCITY_DEADBAND_RAD_S     (0.5f * VALVE_DEG_TO_RAD)
 #define VALVE_STARTUP_RAMP_MS         2000U   /* 2 second startup ramp */
 #define VALVE_MAX_PENDING_TICKS 4U
+#define VALVE_PENDSV_PRIORITY ((1U << __NVIC_PRIO_BITS) - 1U)  /* Lowest priority for deferred work */
 #define VALVE_QUIET_ENTER_RAD_S       (1.0f * VALVE_DEG_TO_RAD)
 #define VALVE_QUIET_EXIT_RAD_S        (2.0f * VALVE_DEG_TO_RAD)
 #define VALVE_TORQUE_SIGN 1.0f  /* Odrive is positive torque */
@@ -54,12 +55,13 @@ static bool velocity_filters_initialized = false;
 
 
 
-/* Simple exponential smoothing filter */
+/* Simple exponential smoothing filter for velocity and other signals in the control loop */
 static inline float simple_lowpass(float input, float *state, float alpha) {
     *state = alpha * input + (1.0f - alpha) * (*state);
     return *state;
 }
 
+/* Enter critical section by disabling interrupts for thread-safe configuration updates */
 static inline uint32_t valve_enter_critical(void)
 {
     uint32_t primask = __get_PRIMASK();
@@ -67,6 +69,7 @@ static inline uint32_t valve_enter_critical(void)
     return primask;
 }
 
+/* Exit critical section by restoring interrupt state */
 static inline void valve_exit_critical(uint32_t primask)
 {
     if ((primask & 0x1U) == 0U) {
@@ -74,6 +77,7 @@ static inline void valve_exit_critical(uint32_t primask)
     }
 }
 
+/* Apply staged configuration changes atomically to avoid partial updates during operation */
 static void valve_apply_staged_config(struct valve_context *ctx)
 {
     if (ctx == NULL || ctx->staged_pending == 0U) {
@@ -90,13 +94,14 @@ static void valve_apply_staged_config(struct valve_context *ctx)
         ctx->config.degrees_per_turn : VALVE_DEFAULT_DEGREES_PER_TURN;
 }
 
-/* Seed or invalidate velocity filters when encoder stream resets */
+/* Seed velocity filters with initial value when encoder stream resets to prevent transients */
 static void valve_velocity_filters_seed(float velocity)
 {
 	velocity_filter_state = velocity;
 	velocity_filters_initialized = true;
 }
 
+/* Invalidate velocity filters and reset quiet mode on encoder errors or resets */
 static inline void valve_velocity_filters_invalidate(struct valve_state *state)
 {
 	velocity_filters_initialized = false;
@@ -105,8 +110,7 @@ static inline void valve_velocity_filters_invalidate(struct valve_state *state)
 	}
 }
 
-/* Process timing with overrun detection and statistical analysis */
-/* Clamp alpha value to valid range [0.0, 1.0] */
+/* Clamp filter alpha to [0,1] for stability and to prevent invalid filter behavior */
 static inline float clamp_alpha(float alpha)
 {
 	if (alpha < 0.0f) return 0.0f;
@@ -114,7 +118,7 @@ static inline float clamp_alpha(float alpha)
 	return alpha;
 }
 
-/* Safe math functions with domain checking (MISRA-C 21.3) */
+/* Safe square root with domain checking to avoid NaN in physics calculations */
 static inline float safe_sqrtf(float x)
 {
 	if (x < 0.0f) {
@@ -129,12 +133,13 @@ static inline float safe_sqrtf(float x)
 	return result;
 }
 
+/* Safe absolute value function for consistency and MISRA compliance */
 static inline float safe_fabsf(float x)
 {
 	return (x < 0.0f) ? -x : x;
 }
 
-/* Clamp torque symmetrically around zero, return true if clamped */
+/* Clamp torque to symmetric limits and indicate if clamping occurred for diagnostics */
 static inline bool clamp_torque(float *torque, float limit)
 {
 	if (*torque > limit) {
@@ -148,14 +153,7 @@ static inline bool clamp_torque(float *torque, float limit)
 	return false;
 }
 
-/* Convert uint32 age to uint16, clamping to PERF_AGE_INVALID if too large */
-static inline uint16_t convert_age_to_uint16(uint32_t age_ms)
-{
-	if (age_ms == UINT32_MAX) return PERF_AGE_INVALID;
-	if (age_ms >= (uint32_t)PERF_AGE_INVALID) return PERF_AGE_INVALID;
-	return (uint16_t)age_ms;
-}
-
+/* Compute low-pass filter alpha coefficient from cutoff frequency for velocity filtering */
 static inline float valve_lowpass_alpha(float cutoff_hz, float dt_s)
 {
 	if (cutoff_hz <= 0.0f) {
@@ -172,7 +170,7 @@ static inline float valve_lowpass_alpha(float cutoff_hz, float dt_s)
  * Used for precise timing measurements (CPU cycles @ 400 MHz)
  */
 
-/* Initialize DWT cycle counter */
+/* Initialize DWT cycle counter for performance profiling */
 static inline void dwt_init(void)
 {
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
@@ -180,16 +178,42 @@ static inline void dwt_init(void)
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 }
 
-/* Get current cycle count */
+/* Get current cycle count for timing measurements */
 static inline uint32_t dwt_get_cycles(void)
 {
     return DWT->CYCCNT;
 }
 
-/* Convert cycles to microseconds (400 MHz CPU) */
+/* Convert cycles to microseconds for human-readable timing data */
 static inline uint32_t dwt_cycles_to_us(uint32_t cycles)
 {
     return cycles / VALVE_CPU_CLOCK_MHZ;
+}
+
+/* Compute dt from latched timestamps with clamping to avoid divide-by-zero or runaway dt */
+static float valve_compute_dt_s(struct valve_state *state, uint32_t timestamp_us)
+{
+	const float min_dt_s = 0.0005f;  /* 0.5 ms */
+	const float max_dt_s = 0.005f;   /* 5 ms */
+	float dt_s = VALVE_LOOP_DT_S;
+
+	if (timestamp_us != 0U) {
+		uint32_t prev = state->diag.last_sample_timestamp_us;
+		if (prev != 0U) {
+			uint32_t delta_us = timestamp_us - prev;
+			float dt_candidate = (float)delta_us * 1.0e-6f;
+			if (dt_candidate < min_dt_s) {
+				dt_s = min_dt_s;
+			} else if (dt_candidate > max_dt_s) {
+				dt_s = max_dt_s;
+			} else {
+				dt_s = dt_candidate;
+			}
+		}
+		state->diag.last_sample_timestamp_us = timestamp_us;
+	}
+
+	return dt_s;
 }
 
 /*
@@ -200,10 +224,7 @@ static inline uint32_t dwt_cycles_to_us(uint32_t cycles)
  * ARR = (1 MHz / VALVE_CONTROL_LOOP_HZ) - 1
  */
 
-/*
- * Configure TIM6 for specified frequency
- * hz: Desired interrupt frequency in Hz
- */
+/* Configure TIM6 registers for the specified interrupt frequency to drive the control loop */
 static void tim6_configure_for_hz(uint32_t hz)
 {
     /* Calculate period in timer ticks */
@@ -218,6 +239,7 @@ static void tim6_configure_for_hz(uint32_t hz)
     htim6->DIER = TIM_DIER_UIE;
 }
 
+/* Initialize TIM6 hardware and NVIC for periodic control loop interrupts */
 static void tim6_init(void)
 {
     /* Enable TIM6 clock */
@@ -234,21 +256,24 @@ static void tim6_init(void)
      */
     NVIC_SetPriority(TIM6_DAC_IRQn, 5);
     NVIC_EnableIRQ(TIM6_DAC_IRQn);
+
+    /* Set PendSV to lowest priority so deferred work never blocks TIM6 or critical IRQs */
+    NVIC_SetPriority(PendSV_IRQn, VALVE_PENDSV_PRIORITY);
 }
 
-/* Start TIM6 timer */
+/* Start TIM6 timer to begin generating control loop interrupts */
 static void tim6_start(void)
 {
     htim6->CR1 |= TIM_CR1_CEN;  /* Enable counter */
 }
 
-/* Stop TIM6 timer */
+/* Stop TIM6 timer to halt control loop execution */
 static void tim6_stop(void)
 {
     htim6->CR1 &= ~TIM_CR1_CEN;  /* Disable counter */
 }
 
-/* Wait for ODrive heartbeat to report desired control/input modes */
+/* Wait for ODrive to enter the required control and input modes before starting closed-loop control */
 static bool valve_wait_for_controller_mode(struct valve_state *state,
 	uint8_t desired_control_mode,
 	uint8_t desired_input_mode)
@@ -280,6 +305,8 @@ static bool valve_wait_for_controller_mode(struct valve_state *state,
  * Minimal handler: stop TIM6, send single ESTOP, set ERROR state.
  * No delays, no blocking operations.
  */
+
+/* Handle FDCAN bus errors by immediately stopping control and sending emergency stop */
 static void valve_fdcan_error_callback(uint8_t error_code, void *context)
 {
 	struct valve_state *state = (struct valve_state *)context;
@@ -299,7 +326,7 @@ static void valve_fdcan_error_callback(uint8_t error_code, void *context)
 	        state->diag.last_can_status = STATUS_ERROR_TIMEOUT;
 }
 
-/* Initialize valve haptic system */
+/* Initialize valve haptic system with ODrive handle and default configuration for safe operation */
 status_t valve_haptic_init(struct valve_context *ctx, struct can_simple_handle *odrive)
 {
     if (ctx == NULL || odrive == NULL) {
@@ -330,13 +357,19 @@ status_t valve_haptic_init(struct valve_context *ctx, struct can_simple_handle *
             .heartbeat_age_ms = UINT32_MAX,
             .last_can_status = STATUS_OK,
             .can_retry_count = 0,
+            .loop_overrun_events = 0,
             .safety = {
                 .peak_fet_temperature_c = 0.0f,
                 .peak_motor_temperature_c = 0.0f,
             },
+            .last_sample_timestamp_us = 0U,
+            .pendsv_delay_min_us = UINT32_MAX,
+            .pendsv_delay_max_us = 0U,
+            .pendsv_delay_sum_us = 0U,
+            .pendsv_delay_count = 0U,
         },
         .odrive = odrive,
-		.encoder_zero_turns = 0.0f,
+        .encoder_zero_turns = 0.0f,
     };
 	
 	memset(&ctx->config, 0, sizeof(ctx->config));
@@ -344,6 +377,11 @@ status_t valve_haptic_init(struct valve_context *ctx, struct can_simple_handle *
 	ctx->staged_field_mask = 0U;
 	ctx->staged_pending = 0U;
 	ctx->config.degrees_per_turn = VALVE_DEFAULT_DEGREES_PER_TURN;
+	ctx->isr_write_idx = 0U;
+	ctx->pendsv_pending = 0U;
+	ctx->isr_seq = 0U;
+	ctx->last_processed_seq = UINT32_MAX;
+	memset(&ctx->isr_buffer, 0, sizeof(ctx->isr_buffer));
 	
 	/* Load default preset (light resistance) for basic functionality */
 	status_t preset_status = valve_haptic_load_preset(ctx, VALVE_PRESET_LIGHT, 0.0f);
@@ -357,8 +395,6 @@ status_t valve_haptic_init(struct valve_context *ctx, struct can_simple_handle *
 	struct fdcan_handle *fdcan = fdcan_get_handle();
 	fdcan_set_error_callback(fdcan, valve_fdcan_error_callback, &ctx->state);
 
-	perfmon_init();
-	perfmon_set_budget_us((uint16_t)VALVE_CONTROL_LOOP_PERIOD_US);
 	
 	return STATUS_OK;
 }
@@ -374,6 +410,8 @@ status_t valve_haptic_init(struct valve_context *ctx, struct can_simple_handle *
  * @param travel_degrees: Total rotation range (e.g., 90, 180)
  * @return: STATUS_OK on success, error on invalid parameters
  */
+
+/* Load preset configuration to set up valve physics and limits for different resistance levels */
 status_t valve_haptic_load_preset(struct valve_context *ctx, valve_preset_t preset, float travel_degrees)
 {
     if (ctx == NULL) {
@@ -395,6 +433,7 @@ status_t valve_haptic_load_preset(struct valve_context *ctx, valve_preset_t pres
     return valve_preset_validate(&ctx->config);
 }
 
+/* Stage configuration changes for atomic application during runtime to avoid disrupting control */
 status_t valve_haptic_stage_config(struct valve_context *ctx, const struct valve_config *cfg, uint32_t field_mask)
 {
     if (ctx == NULL || cfg == NULL) {
@@ -437,6 +476,8 @@ status_t valve_haptic_stage_config(struct valve_context *ctx, const struct valve
  *
  * Returns STATUS_OK on success, error code on failure
  */
+
+/* Start the haptic valve control loop with ODrive initialization and encoder setup */
 status_t valve_haptic_start(struct valve_context *ctx)
 {
     struct valve_state *state = &ctx->state;
@@ -466,8 +507,6 @@ status_t valve_haptic_start(struct valve_context *ctx)
 	state->degrees_per_turn = (ctx->config.degrees_per_turn > 0.0f) ?
 		ctx->config.degrees_per_turn : VALVE_DEFAULT_DEGREES_PER_TURN;
 
-	perfmon_init();
-	perfmon_set_budget_us((uint16_t)VALVE_CONTROL_LOOP_PERIOD_US);
 	
 	state->diag.last_can_status = STATUS_OK;
 	state->diag.can_retry_count = 0;
@@ -496,8 +535,8 @@ status_t valve_haptic_start(struct valve_context *ctx)
     
     /* Set limits based on loaded preset configuration */
     if (ctx->config.torque_limit_nm > 0.0f) {
-        /* Convert torque limit to current: assume ~0.15 Nm/A torque constant */
-        float current_limit = (ctx->config.torque_limit_nm / 0.15f) + 2.0f;  /* Add 2A headroom */
+        /* Convert torque limit to current: assume ~0.083 Nm/A torque constant. Move this parameter to config soon */
+        float current_limit = (ctx->config.torque_limit_nm / 0.083f) + 2.0f;  /* Add 2A headroom */
         if (current_limit > VALVE_ODRIVE_CURRENT_LIMIT_A) {
             current_limit = VALVE_ODRIVE_CURRENT_LIMIT_A;
         }
@@ -596,11 +635,22 @@ status_t valve_haptic_start(struct valve_context *ctx)
 	state->diag.t_us_accum = 0ULL;
 	state->diag.last_loop_time_us = 0U;
 	state->diag.sample_seq = 0U;
+	state->diag.loop_overrun_events = 0U;
+	state->diag.last_sample_timestamp_us = 0U;
+	state->diag.pendsv_delay_min_us = UINT32_MAX;
+	state->diag.pendsv_delay_max_us = 0U;
+	state->diag.pendsv_delay_sum_us = 0U;
+	state->diag.pendsv_delay_count = 0U;
 	state->torque_nm = 0.0f;
 	state->previous_torque_nm = 0.0f;
 	state->filtered_torque_nm = 0.0f;
 	state->passivity_energy_j = 0.0f;
-    
+	ctx->isr_write_idx = 0U;
+	ctx->pendsv_pending = 0U;
+	ctx->isr_seq = 0U;
+	ctx->last_processed_seq = UINT32_MAX;
+	memset(&ctx->isr_buffer, 0, sizeof(ctx->isr_buffer));
+	    
     /* Initialize DWT cycle counter for timing measurements */
     dwt_init();
     
@@ -622,6 +672,8 @@ status_t valve_haptic_start(struct valve_context *ctx)
  * 3. Clear control loop flag
  * 4. Return to IDLE state
  */
+
+/* Stop the haptic valve control loop and return ODrive to idle state for safe shutdown */
 void valve_haptic_stop(struct valve_context *ctx)
 {
     struct valve_state *state = &ctx->state;
@@ -643,9 +695,11 @@ void valve_haptic_stop(struct valve_context *ctx)
 	state->diag.can_retry_count = 0;
 	state->diag.telemetry_age_ms = UINT32_MAX;
 	state->diag.heartbeat_age_ms = UINT32_MAX;
+	ctx->pendsv_pending = 0U;
+	ctx->last_processed_seq = UINT32_MAX;
 }
 
-/* Emergency stop with ESTOP - for critical safety situations */
+/* Emergency stop with ESTOP command for immediate shutdown in critical safety situations */
 static void valve_haptic_emergency_stop(struct valve_context *ctx)
 {
     struct valve_state *state = &ctx->state;
@@ -667,9 +721,11 @@ static void valve_haptic_emergency_stop(struct valve_context *ctx)
 	state->diag.can_retry_count = 0;
 	state->diag.telemetry_age_ms = UINT32_MAX;
 	state->diag.heartbeat_age_ms = UINT32_MAX;
+	ctx->pendsv_pending = 0U;
+	ctx->last_processed_seq = UINT32_MAX;
 }
 
-/* Stop the loop and record a CAN failure for post-mortem visibility */
+/* Stop the loop and record a CAN failure for post-mortem visibility and error tracking */
 static void valve_handle_can_failure(struct valve_context *ctx, status_t error_code)
 {
 	if (ctx == NULL) {
@@ -711,14 +767,16 @@ static void valve_handle_can_failure(struct valve_context *ctx, status_t error_c
  *          STATUS_ERROR_BUFFER_EMPTY if cached data is unavailable,
  *          STATUS_ERROR_TIMEOUT on CAN communication errors after max retries
  */
-static status_t valve_process_encoder_data(struct valve_state *state)
-{
-	struct can_simple_encoder_estimates obs;
-	uint32_t age_ms = UINT32_MAX;
-	status_t obs_status;
 
-	/* Get cached encoder data (S1 broadcasts at 1kHz automatically) */
-	obs_status = can_simple_get_cached_encoder(state->odrive, &obs, &age_ms, NULL);
+/* Process encoder data using latched ISR sample and variable dt */
+static status_t valve_process_encoder_data_latched(struct valve_state *state,
+	const struct valve_isr_sample *latched,
+	float dt_s)
+{
+	struct can_simple_encoder_estimates obs = latched->encoder;
+	uint32_t age_ms = latched->encoder_age_ms;
+	status_t obs_status = latched->encoder_status;
+
 	if (obs_status != STATUS_OK) {
 		state->diag.telemetry_age_ms = UINT32_MAX;
 		state->diag.can_retry_count++;
@@ -726,7 +784,7 @@ static status_t valve_process_encoder_data(struct valve_state *state)
 			valve_velocity_filters_invalidate(state);
 			return STATUS_ERROR_TIMEOUT;
 		}
-		return STATUS_ERROR_BUFFER_EMPTY;
+		return obs_status;
 	}
 
 	state->diag.telemetry_age_ms = age_ms;
@@ -734,13 +792,11 @@ static status_t valve_process_encoder_data(struct valve_state *state)
 	/* Track encoder data age statistics (convert ms to µs for consistency) */
 	uint32_t age_us = age_ms * 1000U;
 	if (state->diag.encoder_age_count == 0U) {
-		/* First sample - initialize */
 		state->diag.encoder_age_min_us = age_us;
 		state->diag.encoder_age_max_us = age_us;
 		state->diag.encoder_age_sum_us = age_us;
 		state->diag.encoder_age_count = 1U;
 	} else {
-		/* Update running statistics */
 		if (age_us < state->diag.encoder_age_min_us) {
 			state->diag.encoder_age_min_us = age_us;
 		}
@@ -788,7 +844,8 @@ static status_t valve_process_encoder_data(struct valve_state *state)
 	state->position_deg = (obs.position - state->encoder_zero_turns) * deg_per_turn;
 
 	/* Estimate instantaneous velocity from position delta (removes ODrive filter lag) */
-	float vel_raw = delta_turns * deg_per_turn * VALVE_DEG_TO_RAD * (float)VALVE_CONTROL_LOOP_HZ;
+	float dt_used = (dt_s > 0.0f) ? dt_s : VALVE_LOOP_DT_S;
+	float vel_raw = delta_turns * deg_per_turn * VALVE_DEG_TO_RAD / dt_used;
 	if (!velocity_filters_initialized) {
 		valve_velocity_filters_seed(vel_raw);
 	}
@@ -804,31 +861,14 @@ static status_t valve_process_encoder_data(struct valve_state *state)
 	float prev_omega = state->omega_rad_s;
 	state->omega_rad_s = vel_raw;
 	state->prev_omega_rad_s = prev_omega;
-	state->alpha_rad_s2 = (state->omega_rad_s - prev_omega) * (float)VALVE_CONTROL_LOOP_HZ;
+	state->alpha_rad_s2 = (state->omega_rad_s - prev_omega) / dt_used;
 	state->diag.can_retry_count = 0;
 
 	return STATUS_OK;
 }
 
-#if 0
-static float apply_basic_limits(const struct valve_config *cfg, struct valve_state *state, float torque, uint8_t *guard_flags, float dt_ms)
-{
-	(void)dt_ms; /* Unused in simplified model */
-	bool torque_clamped = false;
-
-	/* Pure passive model: no additional rate limiting here, only hard clamp */
-	torque_clamped = clamp_torque(&torque, cfg->torque_limit_nm);
-	state->previous_torque_nm = torque;
-
-	if (torque_clamped) {
-		*guard_flags |= PERF_GUARD_TORQUE_CLAMP;
-	}
-
-	return torque;
-}
-#endif
-
-static void valve_update_diagnostics(struct valve_state *state, float torque, uint8_t guard_flags, uint32_t t_start, uint16_t loop_period_us, uint32_t age_ms, uint32_t hb_age_ms)
+/* Update diagnostic counters and performance monitoring data after each control loop iteration */
+static void valve_update_diagnostics(struct valve_state *state, float torque, uint32_t t_start, uint16_t loop_period_us)
 {
 	(void)loop_period_us;  /* Unused - timing calculated from DWT cycles */
 	
@@ -873,12 +913,6 @@ static void valve_update_diagnostics(struct valve_state *state, float torque, ui
 	state->torque_nm = torque;
 	state->diag.loop_count++;
 	state->diag.can_retry_count = 0;
-
-	/* Perfmon for performance analysis */
-	perfmon_push(state->position_deg, state->omega_rad_s, state->torque_nm, state->passivity_energy_j,
-	    convert_age_to_uint16(age_ms), convert_age_to_uint16(t_start),
-	    (uint16_t)VALVE_CONTROL_LOOP_PERIOD_US, 0, 0,
-	    convert_age_to_uint16(hb_age_ms), 0, 0, guard_flags);
 }
 
 /*
@@ -890,8 +924,14 @@ static void valve_update_diagnostics(struct valve_state *state, float torque, ui
  *
  * @param ctx: Pointer to valve context containing state, config, and filters
  */
-void valve_haptic_process(struct valve_context *ctx)
+
+/* Execute the main haptic valve control loop iteration using latched ISR data */
+void valve_haptic_process_with_latched(struct valve_context *ctx, const struct valve_isr_sample *latched)
 {
+	if (ctx == NULL || latched == NULL) {
+		return;
+	}
+
 	struct valve_state *state = &ctx->state;
 
 	if ((state->status & VALVE_STATE_RUNNING) == 0) return;
@@ -899,27 +939,31 @@ void valve_haptic_process(struct valve_context *ctx)
 	valve_apply_staged_config(ctx);
 	struct valve_config *cfg = &ctx->config;
 
+	float dt_s = valve_compute_dt_s(state, latched->timestamp_us);
+	if (dt_s <= 0.0f) {
+		dt_s = VALVE_LOOP_DT_S;
+	}
+
 	uint32_t t_start = dwt_get_cycles();
 
-	/* Process encoder data and check for fresh samples */
-	status_t encoder_status = valve_process_encoder_data(state);
+	/* Process encoder data from latched sample */
+	status_t encoder_status = valve_process_encoder_data_latched(state, latched, dt_s);
 	if (encoder_status != STATUS_OK) {
 		return;
 	}
 
-	/* Check ODrive status periodically (every 100ms)
-	 * Read from cached heartbeat (S1 broadcasts at 100ms intervals) */
+	/* Use latched heartbeat data periodically (every 100ms) */
 	uint32_t now_ms = board_get_systick_ms();
-	if (now_ms - last_heartbeat_check_ms > 100) {
-		struct can_simple_heartbeat hb;
-		uint32_t hb_age_ms;
-		if (can_simple_get_cached_heartbeat(state->odrive, &hb, &hb_age_ms) == STATUS_OK) {
-			state->diag.heartbeat_age_ms = hb_age_ms;
-			if (hb.axis_error != 0) {
+	if (now_ms - last_heartbeat_check_ms > 100U) {
+		if (latched->heartbeat_status == STATUS_OK) {
+			state->diag.heartbeat_age_ms = latched->heartbeat_age_ms;
+			if (latched->heartbeat.axis_error != 0) {
 				/* ODrive has an error - emergency stop valve */
 				valve_haptic_emergency_stop(ctx);
 				return;
 			}
+		} else {
+			state->diag.heartbeat_age_ms = UINT32_MAX;
 		}
 		last_heartbeat_check_ms = now_ms;
 	}
@@ -933,30 +977,28 @@ void valve_haptic_process(struct valve_context *ctx)
 	 * apply optional rate limiting, clamp to safety limits, then stream the
 	 * torque setpoint directly to the ODrive torque controller.
 	 */
-	uint8_t guard_flags = 0U;
 	float torque_nm = valve_physics_calculate_torque_hil(cfg,
 	    state->position_deg,
 	    state->omega_rad_s,
 	    state->quiet_active);
 
-	float clamped_torque = valve_physics_clamp_torque(
-	    torque_nm,
-	    (cfg->torque_limit_nm > 0.0f) ? cfg->torque_limit_nm : 0.0f);
-	if (clamped_torque != torque_nm) {
-		guard_flags |= PERF_GUARD_TORQUE_CLAMP;
+	float torque_limit = 0.0f;
+	if (cfg->torque_limit_nm > 0.0f) {
+	    torque_limit = cfg->torque_limit_nm;
 	}
-	torque_nm = clamped_torque;
+
+	torque_nm = valve_physics_clamp_torque(
+	    torque_nm,
+	    torque_limit);
 
 	float prev_filtered = state->filtered_torque_nm;
-	float filtered_torque = valve_filter_lowpass_simple(
+	torque_nm = valve_filter_lowpass_simple(
 	    torque_nm,
 	    prev_filtered,
 	    VALVE_TORQUE_FILTER_CUTOFF_HZ,
 	    VALVE_TORQUE_FILTER_SAMPLE_RATE_HZ);
-	torque_nm = filtered_torque;
 
-	/* Enhanced passivity energy tank with persistent storage */
-	const float dt_s = VALVE_LOOP_DT_S;
+	/* Enhanced passivity energy tank with variable dt */
 	float power_w = torque_nm * state->omega_rad_s;
 	float delta_energy = power_w * dt_s;
 	
@@ -998,13 +1040,45 @@ void valve_haptic_process(struct valve_context *ctx)
 	}
 	state->diag.last_can_status = STATUS_OK;
 
-	valve_update_diagnostics(state, drive_torque_nm, guard_flags, t_start,
-	    (uint16_t)VALVE_CONTROL_LOOP_PERIOD_US, state->diag.telemetry_age_ms, state->diag.heartbeat_age_ms);
+	valve_update_diagnostics(state, drive_torque_nm, t_start,
+	    (uint16_t)VALVE_CONTROL_LOOP_PERIOD_US);
 	
 	/* Process profiler sampling */
 }
 
-/* Timer ISR callback - executes valve control loop autonomously */
+/* Convenience wrapper to run one loop using freshly fetched cache data (non-ISR) */
+void valve_haptic_process(struct valve_context *ctx)
+{
+	if (ctx == NULL) {
+		return;
+	}
+
+	struct valve_state *state = &ctx->state;
+	struct valve_isr_sample sample = {
+		.timestamp_us = dwt_cycles_to_us(dwt_get_cycles()),
+		.encoder_age_ms = UINT32_MAX,
+		.heartbeat_age_ms = UINT32_MAX,
+		.encoder_status = STATUS_ERROR_BUFFER_EMPTY,
+		.heartbeat_status = STATUS_ERROR_BUFFER_EMPTY,
+		.seq = 0U,
+	};
+
+	sample.encoder_status = can_simple_get_cached_encoder(state->odrive, &sample.encoder, &sample.encoder_age_ms, NULL);
+	if (sample.encoder_status != STATUS_OK) {
+		memset(&sample.encoder, 0, sizeof(sample.encoder));
+		sample.encoder_age_ms = UINT32_MAX;
+	}
+
+	sample.heartbeat_status = can_simple_get_cached_heartbeat(state->odrive, &sample.heartbeat, &sample.heartbeat_age_ms);
+	if (sample.heartbeat_status != STATUS_OK) {
+		memset(&sample.heartbeat, 0, sizeof(sample.heartbeat));
+		sample.heartbeat_age_ms = UINT32_MAX;
+	}
+
+	valve_haptic_process_with_latched(ctx, &sample);
+}
+
+/* Timer ISR callback to latch data and schedule PendSV for processing */
 void valve_haptic_timer_isr(void)
 {
 	struct valve_context *ctx = active_valve_context;
@@ -1017,15 +1091,106 @@ void valve_haptic_timer_isr(void)
 		return;
 	}
 
-	/* Execute control loop directly in ISR for autonomous operation */
-	valve_haptic_process(ctx);
+	uint8_t write_idx = ctx->isr_write_idx;
+	struct valve_isr_sample *slot = &ctx->isr_buffer[write_idx];
+
+	slot->seq = ctx->isr_seq++;
+	slot->timestamp_us = dwt_cycles_to_us(dwt_get_cycles());
+
+	slot->encoder_age_ms = UINT32_MAX;
+	slot->encoder_status = can_simple_get_cached_encoder(ctx->state.odrive, &slot->encoder, &slot->encoder_age_ms, NULL);
+	if (slot->encoder_status != STATUS_OK) {
+		memset(&slot->encoder, 0, sizeof(slot->encoder));
+		slot->encoder_age_ms = UINT32_MAX;
+	}
+
+	slot->heartbeat_age_ms = UINT32_MAX;
+	slot->heartbeat_status = can_simple_get_cached_heartbeat(ctx->state.odrive, &slot->heartbeat, &slot->heartbeat_age_ms);
+	if (slot->heartbeat_status != STATUS_OK) {
+		memset(&slot->heartbeat, 0, sizeof(slot->heartbeat));
+		slot->heartbeat_age_ms = UINT32_MAX;
+	}
+
+	/* Toggle write index for next ISR */
+	ctx->isr_write_idx = 1U - write_idx;
+
+	/* Detect overrun: PendSV still pending when new sample arrives */
+	if (ctx->pendsv_pending) {
+		ctx->state.diag.loop_overrun_events++;
+		/* Emergency stop if overruns exceed threshold (sustained control loop failure) */
+		if (ctx->state.diag.loop_overrun_events >= VALVE_OVERRUN_EMERGENCY_THRESHOLD) {
+			valve_haptic_emergency_stop(ctx);
+			return;
+		}
+	}
+	ctx->pendsv_pending = 1U;
+
+	/* Record timestamp for PendSV delay measurement */
+	slot->pendsv_trigger_us = dwt_cycles_to_us(dwt_get_cycles());
+
+	/* Data memory barrier ensures all buffer writes are visible before triggering PendSV */
+	__DMB();
+
+	/* Trigger PendSV for processing */
+	SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;
+}
+
+/* PendSV handler implementation (invoked from stm32h7xx_it.c) */
+void valve_haptic_pendsv_handler(void)
+{
+	struct valve_context *context = active_valve_context;
+
+	if (context == NULL) {
+		return;
+	}
+
+	if (context->state.status != VALVE_STATE_RUNNING) {
+		context->pendsv_pending = 0U;
+		return;
+	}
+
+	/* Measure PendSV scheduling delay */
+	uint32_t pendsv_start_us = dwt_cycles_to_us(dwt_get_cycles());
+
+	uint8_t read_idx = 1U - context->isr_write_idx;
+	const struct valve_isr_sample *latched = &context->isr_buffer[read_idx];
+
+	/* Track PendSV delay statistics */
+	uint32_t delay_us = pendsv_start_us - latched->pendsv_trigger_us;
+	if (context->state.diag.pendsv_delay_count == 0U) {
+		context->state.diag.pendsv_delay_min_us = delay_us;
+		context->state.diag.pendsv_delay_max_us = delay_us;
+		context->state.diag.pendsv_delay_sum_us = delay_us;
+		context->state.diag.pendsv_delay_count = 1U;
+	} else {
+		if (delay_us < context->state.diag.pendsv_delay_min_us) {
+			context->state.diag.pendsv_delay_min_us = delay_us;
+		}
+		if (delay_us > context->state.diag.pendsv_delay_max_us) {
+			context->state.diag.pendsv_delay_max_us = delay_us;
+		}
+		context->state.diag.pendsv_delay_sum_us += delay_us;
+		context->state.diag.pendsv_delay_count++;
+	}
+
+	/* Count skipped samples if PendSV lagged behind TIM6 */
+	if (context->last_processed_seq != UINT32_MAX && latched->seq > (context->last_processed_seq + 1U)) {
+		context->state.diag.loop_overrun_events += (latched->seq - context->last_processed_seq - 1U);
+	}
+	context->last_processed_seq = latched->seq;
+
+	valve_haptic_process_with_latched(context, latched);
+
+	context->pendsv_pending = 0U;
 }
 
 /*
  * TIM6_DAC_IRQHandler - TIM6 interrupt handler
  * Called at VALVE_CONTROL_LOOP_HZ when TIM6 update event occurs
- * Executes valve control loop directly for autonomous, deterministic operation
+ * Latches data and posts PendSV for deferred processing
  */
+
+/* Hardware interrupt handler for TIM6 to trigger control loop execution at precise intervals */
 void TIM6_DAC_IRQHandler(void)
 {
     /* Check if update interrupt flag is set */
@@ -1038,13 +1203,13 @@ void TIM6_DAC_IRQHandler(void)
     }
 }
 
-/* Get pointer to current state */
+/* Get pointer to current valve state for external monitoring and diagnostics */
 struct valve_state *valve_haptic_get_state(struct valve_context *ctx)
 {
     return &ctx->state;
 }
 
-/* Get pointer to current configuration */
+/* Get pointer to current valve configuration for inspection and modification */
 struct valve_config *valve_haptic_get_config(struct valve_context *ctx)
 {
     return &ctx->config;
@@ -1060,6 +1225,8 @@ struct valve_config *valve_haptic_get_config(struct valve_context *ctx)
  * @param avg_us: Output - average loop time in microseconds
  * @param max_us: Output - maximum loop time in microseconds
  */
+
+/* Retrieve timing statistics for the control loop to monitor performance and detect overruns */
 status_t
 valve_haptic_get_loop_timing(struct valve_context *ctx, uint32_t *min_us, uint32_t *avg_us, uint32_t *max_us)
 {
@@ -1079,6 +1246,8 @@ return STATUS_ERROR_NOT_INITIALIZED;
 
 return STATUS_OK;
 }
+
+/* Get pointer to the active valve context for global access in ISRs and callbacks */
 struct valve_context *valve_haptic_get_context(void)
 {
     return active_valve_context;
@@ -1090,42 +1259,10 @@ struct valve_context *valve_haptic_get_context(void)
  * Estimates time for velocity to decay to <5% of peak value
  * Returns settling time in milliseconds, or 0.0 if insufficient data
  */
+
+/* Estimate valve settling time based on performance monitoring data for stability analysis */
 float
 valve_haptic_calc_settling_time_ms(void)
 {
-	struct perfmon_snapshot snap;
-	float vel_threshold;
-	float settling_time_ms;
-	
-	perfmon_snapshot(&snap);
-	
-	/* Need meaningful data */
-	if (snap.sample_count < VALVE_MIN_SAMPLES_FOR_STABILITY || snap.motion.vel_peak_to_peak < VALVE_MIN_VEL_PEAK_FOR_STABILITY) {
-		return 0.0f;
-	}
-	
-	/* 5% threshold of peak-to-peak velocity */
-	vel_threshold = snap.motion.vel_peak_to_peak * 0.05f;
-	
-	/* Estimate settling time using velocity RMS and zero-crossing rate */
-	/* If vel_rms is below threshold, system is settled */
-	if (snap.motion.vel_rms < vel_threshold) {
-		/* Already settled - estimate time from zero-crossing rate */
-		if (snap.motion.zero_cross_rate_hz > 0.1f) {
-			/* Time constant ~ 1 / (2 * pi * freq) */
-			settling_time_ms = 1000.0f / (VALVE_TWO_PI_APPROX * snap.motion.zero_cross_rate_hz) * VALVE_SETTLING_TIME_FACTOR;
-		} else {
-			settling_time_ms = 100.0f;  /* Well-damped */
-		}
-	} else {
-		/* Not yet settled - estimate from oscillation frequency */
-		if (snap.motion.zero_cross_rate_hz > 0.1f) {
-			/* Settling time ~ 5 * period for critically damped */
-			settling_time_ms = 5000.0f / snap.motion.zero_cross_rate_hz;
-		} else {
-			settling_time_ms = 500.0f;  /* Default estimate */
-		}
-	}
-	
-	return settling_time_ms;
+	return 0.0f;
 }

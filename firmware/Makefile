@@ -42,8 +42,6 @@ src/valve/valve_nvm.c \
 src/valve/valve_filters.c \
 src/valve/valve_manager.c \
 src/odrive/odrive_manager.c \
-src/app/perfmon.c \
-src/app/performance_manager.c \
 src/stm32h7xx_it.c \
 src/syscalls.c \
 src/network/net_init.c \
