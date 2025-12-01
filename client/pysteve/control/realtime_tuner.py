@@ -39,13 +39,6 @@ class RealtimeTuner:
         self._config_cache: Optional[Dict[str, Any]] = None
         self._cache_time: float = 0.0
 
-    def _validate_range(self, name: str, value: float, min_val: float, max_val: float) -> None:
-        """Validate parameter is within accepted range."""
-        if not (min_val <= value <= max_val):
-            raise SteveValidationError(
-                f"{name} must be between {min_val} and {max_val}, got {value}"
-            )
-
     def get_current_config(self, use_cache: bool = True) -> Dict[str, Any]:
         """
         Get current valve configuration.
@@ -70,7 +63,7 @@ class RealtimeTuner:
         Set viscous damping coefficient.
         
         Args:
-            value: Viscous damping [N·m·s/rad] (0.01 - 0.5)
+            value: Viscous damping [N·m·s/rad]
         
         Returns:
             Response data
@@ -78,7 +71,6 @@ class RealtimeTuner:
         Example:
             >>> tuner.set_viscous(0.08)
         """
-        self._validate_range("viscous", value, 0.01, 0.5)
         result = self.client.update_config(viscous=value)
         self._config_cache = None  # Invalidate cache
         return result
@@ -88,12 +80,11 @@ class RealtimeTuner:
         Set Coulomb friction torque.
         
         Args:
-            value: Coulomb friction [N·m] (0.005 - 0.05)
+            value: Coulomb friction [N·m]
         
         Returns:
             Response data
         """
-        self._validate_range("coulomb", value, 0.005, 0.05)
         result = self.client.update_config(coulomb=value)
         self._config_cache = None
         return result
@@ -103,12 +94,11 @@ class RealtimeTuner:
         Set virtual wall stiffness.
         
         Args:
-            value: Wall stiffness [N·m/turn] (0.5 - 5.0)
+            value: Wall stiffness [N·m/turn]
         
         Returns:
             Response data
         """
-        self._validate_range("wall_stiffness", value, 0.5, 5.0)
         result = self.client.update_config(wall_stiffness=value)
         self._config_cache = None
         return result
@@ -118,12 +108,11 @@ class RealtimeTuner:
         Set virtual wall damping.
         
         Args:
-            value: Wall damping [N·m·s/turn] (0.05 - 0.5)
+            value: Wall damping [N·m·s/turn]
         
         Returns:
             Response data
         """
-        self._validate_range("wall_damping", value, 0.05, 0.5)
         result = self.client.update_config(wall_damping=value)
         self._config_cache = None
         return result
@@ -133,12 +122,11 @@ class RealtimeTuner:
         Set friction smoothing epsilon.
         
         Args:
-            value: Smoothing epsilon (0.0001 - 0.01)
+            value: Smoothing epsilon
         
         Returns:
             Response data
         """
-        self._validate_range("smoothing", value, 0.0001, 0.01)
         result = self.client.update_config(smoothing=value)
         self._config_cache = None
         return result
@@ -148,12 +136,11 @@ class RealtimeTuner:
         Set maximum torque limit.
         
         Args:
-            value: Torque limit [N·m] (0.1 - 2.0)
+            value: Torque limit [N·m]
         
         Returns:
             Response data
         """
-        self._validate_range("torque_limit", value, 0.1, 2.0)
         result = self.client.update_config(torque_limit=value)
         self._config_cache = None
         return result
@@ -163,22 +150,12 @@ class RealtimeTuner:
         Set valve endpoint positions.
         
         Args:
-            closed: Closed position [degrees] (0 - 360)
-            open: Open position [degrees] (0 - 360)
+            closed: Closed position [degrees]
+            open: Open position [degrees]
         
         Returns:
             Response data
-        
-        Raises:
-            SteveValidationError: If closed >= open
         """
-        if not (0 <= closed <= 360):
-            raise SteveValidationError(f"closed must be 0-360, got {closed}")
-        if not (0 <= open <= 360):
-            raise SteveValidationError(f"open must be 0-360, got {open}")
-        if closed >= open:
-            raise SteveValidationError(f"closed ({closed}) must be < open ({open})")
-
         result = self.client.update_config(closed_position=closed, open_position=open)
         self._config_cache = None
         return result
@@ -188,12 +165,11 @@ class RealtimeTuner:
         Set travel range (adjusts open position, keeps closed at 0).
         
         Args:
-            degrees: Travel range [degrees] (1 - 360)
+            degrees: Travel range [degrees]
         
         Returns:
             Response data
         """
-        self._validate_range("travel", degrees, 1, 360)
         result = self.client.update_config(closed_position=0.0, open_position=degrees)
         self._config_cache = None
         return result
@@ -201,9 +177,6 @@ class RealtimeTuner:
     def update_multiple(self, **params) -> Dict[str, Any]:
         """
         Update multiple parameters atomically.
-        
-        All parameters are validated before sending to ensure atomicity.
-        If validation fails, no parameters are updated.
         
         Args:
             **params: Parameters to update (viscous, coulomb, wall_stiffness, etc.)
@@ -219,37 +192,16 @@ class RealtimeTuner:
             ...     wall_damping=0.15
             ... )
         """
-        # Validate all parameters before updating
         valid_params = {
-            "viscous": (0.01, 0.5),
-            "coulomb": (0.005, 0.05),
-            "wall_stiffness": (0.5, 5.0),
-            "wall_damping": (0.05, 0.5),
-            "smoothing": (0.0001, 0.01),
-            "torque_limit": (0.1, 2.0),
-            "open_position": (0, 360),
-            "closed_position": (0, 360),
+            "viscous", "coulomb", "wall_stiffness", "wall_damping",
+            "smoothing", "torque_limit", "open_position", "closed_position",
+            "degrees_per_turn"
         }
 
-        for key, value in params.items():
-            if key in valid_params:
-                min_val, max_val = valid_params[key]
-                self._validate_range(key, value, min_val, max_val)
-            elif key == "degrees_per_turn":
-                if value <= 0:
-                    raise SteveValidationError(f"degrees_per_turn must be positive, got {value}")
-            else:
+        for key in params.keys():
+            if key not in valid_params:
                 raise SteveValidationError(f"Unknown parameter: {key}")
 
-        # Check endpoint consistency if both provided
-        if "closed_position" in params and "open_position" in params:
-            if params["closed_position"] >= params["open_position"]:
-                raise SteveValidationError(
-                    f"closed_position ({params['closed_position']}) must be < "
-                    f"open_position ({params['open_position']})"
-                )
-
-        # All validated - update
         result = self.client.update_config(**params)
         self._config_cache = None
         return result

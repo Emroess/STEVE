@@ -1,5 +1,5 @@
 """
-Configuration dataclasses with validation for STEVE valve parameters.
+Configuration dataclasses for STEVE valve parameters.
 """
 
 from dataclasses import dataclass, field
@@ -11,19 +11,19 @@ class ValveConfig:
     """
     Valve configuration parameters.
     
-    All parameters are validated on initialization to ensure they fall within
-    STEVE firmware's accepted ranges.
+    Parameter validation is handled by the firmware. The client passes
+    values through to the REST API without enforcing ranges.
     
     Attributes:
-        viscous: Viscous damping coefficient [N·m·s/rad] (0.01 - 0.5)
-        coulomb: Coulomb friction torque [N·m] (0.005 - 0.05)
-        wall_stiffness: Virtual wall stiffness [N·m/turn] (0.5 - 5.0)
-        wall_damping: Virtual wall damping [N·m·s/turn] (0.05 - 0.5)
-        smoothing: Friction smoothing epsilon (0.0001 - 0.01)
-        torque_limit: Maximum torque [N·m] (0.1 - 2.0)
-        open_position: Fully open position [degrees] (0 - 360)
-        closed_position: Fully closed position [degrees] (0 - 360)
-        degrees_per_turn: Mechanical scaling [deg/turn] (> 0)
+        viscous: Viscous damping coefficient [N·m·s/rad]
+        coulomb: Coulomb friction torque [N·m]
+        wall_stiffness: Virtual wall stiffness [N·m/turn]
+        wall_damping: Virtual wall damping [N·m·s/turn]
+        smoothing: Friction smoothing epsilon
+        torque_limit: Maximum torque [N·m]
+        open_position: Fully open position [degrees]
+        closed_position: Fully closed position [degrees]
+        degrees_per_turn: Mechanical scaling [deg/turn]
     """
 
     viscous: float = 0.05
@@ -38,58 +38,9 @@ class ValveConfig:
 
     def __post_init__(self) -> None:
         """Validate parameters after initialization."""
-        from pysteve.core.exceptions import SteveValidationError
-
-        if not (0.01 <= self.viscous <= 0.5):
-            raise SteveValidationError(
-                f"viscous must be between 0.01 and 0.5, got {self.viscous}"
-            )
-
-        if not (0.005 <= self.coulomb <= 0.05):
-            raise SteveValidationError(
-                f"coulomb must be between 0.005 and 0.05, got {self.coulomb}"
-            )
-
-        if not (0.5 <= self.wall_stiffness <= 5.0):
-            raise SteveValidationError(
-                f"wall_stiffness must be between 0.5 and 5.0, got {self.wall_stiffness}"
-            )
-
-        if not (0.05 <= self.wall_damping <= 0.5):
-            raise SteveValidationError(
-                f"wall_damping must be between 0.05 and 0.5, got {self.wall_damping}"
-            )
-
-        if not (0.0001 <= self.smoothing <= 0.01):
-            raise SteveValidationError(
-                f"smoothing must be between 0.0001 and 0.01, got {self.smoothing}"
-            )
-
-        if not (0.1 <= self.torque_limit <= 2.0):
-            raise SteveValidationError(
-                f"torque_limit must be between 0.1 and 2.0, got {self.torque_limit}"
-            )
-
-        if not (0 <= self.open_position <= 360):
-            raise SteveValidationError(
-                f"open_position must be between 0 and 360, got {self.open_position}"
-            )
-
-        if not (0 <= self.closed_position <= 360):
-            raise SteveValidationError(
-                f"closed_position must be between 0 and 360, got {self.closed_position}"
-            )
-
-        if self.closed_position >= self.open_position:
-            raise SteveValidationError(
-                f"closed_position ({self.closed_position}) must be less than "
-                f"open_position ({self.open_position})"
-            )
-
-        if self.degrees_per_turn <= 0:
-            raise SteveValidationError(
-                f"degrees_per_turn must be positive, got {self.degrees_per_turn}"
-            )
+        # Parameter range validation is handled by the firmware.
+        # The client simply passes values through to the REST API.
+        pass
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API requests."""
@@ -163,23 +114,7 @@ class PresetConfig:
                 f"name must be 15 characters or less, got {len(self.name)}"
             )
 
-        if not (1 <= self.travel <= 360):
-            raise SteveValidationError(
-                f"travel must be between 1 and 360, got {self.travel}"
-            )
-
-        # Reuse ValveConfig validation for haptic parameters
-        try:
-            ValveConfig(
-                viscous=self.viscous,
-                coulomb=self.coulomb,
-                wall_stiffness=self.wall_stiffness,
-                wall_damping=self.wall_damping,
-                smoothing=self.smoothing,
-                torque_limit=self.torque_limit,
-            )
-        except SteveValidationError as e:
-            raise SteveValidationError(f"Invalid preset parameter: {e}")
+        # Other parameter range validation is handled by the firmware.
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API requests."""

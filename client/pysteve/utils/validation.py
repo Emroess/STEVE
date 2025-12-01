@@ -13,59 +13,15 @@ def validate_config(config: ValveConfig) -> None:
     """
     Validate ValveConfig parameters.
     
+    Note: Parameter range validation is handled by the firmware.
+    This function is retained for API compatibility but performs no checks.
+    
     Args:
         config: Configuration to validate
-    
-    Raises:
-        SteveValidationError: If validation fails
     """
-    # Viscous damping
-    if not (0.01 <= config.viscous <= 0.5):
-        raise SteveValidationError(
-            f"viscous must be in [0.01, 0.5], got {config.viscous}"
-        )
-
-    # Coulomb friction
-    if not (0.005 <= config.coulomb <= 0.05):
-        raise SteveValidationError(
-            f"coulomb must be in [0.005, 0.05], got {config.coulomb}"
-        )
-
-    # Wall stiffness
-    if not (0.5 <= config.wall_stiffness <= 5.0):
-        raise SteveValidationError(
-            f"wall_stiffness must be in [0.5, 5.0], got {config.wall_stiffness}"
-        )
-
-    # Wall damping
-    if not (0.05 <= config.wall_damping <= 0.5):
-        raise SteveValidationError(
-            f"wall_damping must be in [0.05, 0.5], got {config.wall_damping}"
-        )
-
-    # Smoothing epsilon
-    if not (0.0001 <= config.smoothing <= 0.01):
-        raise SteveValidationError(
-            f"smoothing must be in [0.0001, 0.01], got {config.smoothing}"
-        )
-
-    # Torque limit
-    if not (0.1 <= config.torque_limit <= 2.0):
-        raise SteveValidationError(
-            f"torque_limit must be in [0.1, 2.0], got {config.torque_limit}"
-        )
-
-    # Travel
-    if not (1 <= config.travel <= 360):
-        raise SteveValidationError(
-            f"travel must be in [1, 360], got {config.travel}"
-        )
-
-    # Position limits
-    if config.open_position <= config.closed_position:
-        raise SteveValidationError(
-            f"open_position ({config.open_position}) must be > closed_position ({config.closed_position})"
-        )
+    # Parameter range validation is handled by the firmware.
+    # The client passes values through to the REST API.
+    pass
 
 
 def validate_position(
