@@ -202,7 +202,7 @@ const char index_html[] =
 "document.getElementById('ptorque').value=p[e].torque_limit,"
 "document.getElementById('psmoothing').value=p[e].smoothing)}"
 "function loadAndApplyPreset(){const e=parseInt(document.getElementById('presetLoad').value);"
-"fetch('/api/v1/control',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':'" HTTP_API_KEY "'},body:JSON.stringify({preset:p[e].name.toLowerCase()})})}"
+"fetch('/api/v1/control',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':'" HTTP_API_KEY "'},body:JSON.stringify({preset:e})})}"
 "function loadPresetIntoFields(){const e=parseInt(document.getElementById('presetLoad').value);p[e]&&("
 "document.getElementById('viscous').value=p[e].viscous,"
 "document.getElementById('coulomb').value=p[e].coulomb,"
