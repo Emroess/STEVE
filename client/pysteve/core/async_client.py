@@ -3,7 +3,7 @@ Asynchronous REST API client for concurrent multi-device control.
 """
 
 import asyncio
-from typing import Optional, Callable, Dict, Any, Union, List
+from typing import Optional, Callable, Dict, Any, List
 
 try:
     import aiohttp
@@ -145,11 +145,18 @@ class SteveAsyncClient:
 
     # Valve Control Methods (async versions)
 
-    async def start_valve(self, preset: Optional[Union[str, int]] = None) -> Dict[str, Any]:
-        """Start valve control with optional preset."""
+    async def start_valve(self, preset: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Start valve control with optional preset.
+        
+        Args:
+            preset: Preset index (0-3) to load (optional)
+        """
         data = {"action": "start"}
         if preset is not None:
-            data["preset"] = preset if isinstance(preset, str) else str(preset)
+            if not isinstance(preset, int) or preset < 0 or preset > 3:
+                raise SteveValidationError("preset must be an integer from 0 to 3")
+            data["preset"] = preset
         return await self._request("POST", "control", json=data)
 
     async def stop_valve(self) -> Dict[str, Any]:
@@ -189,9 +196,19 @@ class SteveAsyncClient:
         data = await self._request("GET", "presets")
         return [PresetConfig.from_dict(p) for p in data]
 
-    async def load_preset(self, preset: Union[str, int]) -> Dict[str, Any]:
-        """Load a preset configuration."""
-        data = {"preset": preset if isinstance(preset, str) else str(preset)}
+    async def load_preset(self, preset: int) -> Dict[str, Any]:
+        """
+        Load a preset configuration.
+        
+        Args:
+            preset: Preset index (0-3)
+        
+        Returns:
+            Response data
+        """
+        if not isinstance(preset, int) or preset < 0 or preset > 3:
+            raise SteveValidationError("preset must be an integer from 0 to 3")
+        data = {"preset": preset}
         return await self._request("POST", "control", json=data)
 
     async def save_preset(

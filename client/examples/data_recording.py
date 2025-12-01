@@ -29,7 +29,7 @@ def simple_recording_example():
     # Connect
     client = SteveClient(STEVE_IP)
     client.connect()
-    client.load_preset("smooth")
+    client.load_preset(0)  # Load light preset
 
     streamer = SteveStreamer(client)
     recorder = DataRecorder(client, streamer)
@@ -78,7 +78,7 @@ def realtime_plotting_example():
     # Connect
     client = SteveClient(STEVE_IP)
     client.connect()
-    client.load_preset("medium")
+    client.load_preset(1)  # Load medium preset
 
     streamer = SteveStreamer(client)
 
@@ -118,7 +118,7 @@ def static_plotting_example():
     # Connect and record
     client = SteveClient(STEVE_IP)
     client.connect()
-    client.load_preset("tight")
+    client.load_preset(2)  # Load heavy preset
 
     streamer = SteveStreamer(client)
     recorder = DataRecorder(client, streamer)
@@ -216,7 +216,7 @@ def realtime_tuning_with_feedback():
     # Connect
     client = SteveClient(STEVE_IP)
     client.connect()
-    client.load_preset("medium")
+    client.load_preset(1)  # Load medium preset
 
     streamer = SteveStreamer(client)
     tuner = RealtimeTuner(client, streamer)

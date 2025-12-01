@@ -60,8 +60,8 @@ with SteveClient("192.168.1.100") as steve:
         wall_stiffness=2.0
     )
     
-    # Load preset
-    steve.load_preset("smooth")
+    # Load preset (0=light, 1=medium, 2=heavy, 3=industrial)
+    steve.load_preset(0)
     
     # Stop valve
     steve.stop_valve()

@@ -72,7 +72,7 @@ def hardware_sync_example():
     # Connect to STEVE
     client = SteveClient(STEVE_IP)
     client.connect()
-    client.load_preset("smooth")
+    client.load_preset(0)  # Load light preset
     client.enable_motor()
     time.sleep(0.5)
     client.start_valve()
@@ -135,7 +135,7 @@ def hybrid_mode_example():
     # Connect to STEVE
     client = SteveClient(STEVE_IP)
     client.connect()
-    client.load_preset("medium")
+    client.load_preset(1)  # Load medium preset
     client.enable_motor()
     time.sleep(0.5)
     client.start_valve()

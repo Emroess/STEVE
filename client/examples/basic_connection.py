@@ -51,9 +51,9 @@ def main():
         print(f"  Wall Stiffness: {config.wall_stiffness:.2f} N·m/turn")
         print(f"  Wall Damping: {config.wall_damping:.4f} N·m·s/turn")
 
-        # Load smooth preset
-        print("\nLoading 'smooth' preset...")
-        steve.load_preset("smooth")
+        # Load light preset (index 0)
+        print("\nLoading 'light' preset...")
+        steve.load_preset(0)
         time.sleep(0.5)
         print("✓ Preset loaded")
 
@@ -85,8 +85,8 @@ def main():
         tuner.set_wall_stiffness(2.0)
         time.sleep(2.0)
 
-        print("  Resetting to smooth preset...")
-        steve.load_preset("smooth")
+        print("  Resetting to light preset...")
+        steve.load_preset(0)
         time.sleep(2.0)
 
         # Update multiple parameters at once

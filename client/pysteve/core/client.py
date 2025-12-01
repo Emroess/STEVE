@@ -3,7 +3,7 @@ Synchronous REST API client for STEVE valve control.
 """
 
 import time
-from typing import Optional, Callable, Dict, Any, Union, List
+from typing import Optional, Callable, Dict, Any, List
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -227,24 +227,26 @@ class SteveClient:
 
     # Valve Control Methods
 
-    def start_valve(self, preset: Optional[Union[str, int]] = None) -> Dict[str, Any]:
+    def start_valve(self, preset: Optional[int] = None) -> Dict[str, Any]:
         """
         Start valve control with optional preset.
         
         Args:
-            preset: Preset name or index to load (optional)
+            preset: Preset index (0-3) to load (optional)
         
         Returns:
             Response data containing mode and status
         
         Example:
             >>> steve.start_valve()
-            >>> steve.start_valve("smooth")
-            >>> steve.start_valve(1)
+            >>> steve.start_valve(0)  # Start with light preset
+            >>> steve.start_valve(1)  # Start with medium preset
         """
         data = {"action": "start"}
         if preset is not None:
-            data["preset"] = preset if isinstance(preset, str) else str(preset)
+            if not isinstance(preset, int) or preset < 0 or preset > 3:
+                raise SteveValidationError("preset must be an integer from 0 to 3")
+            data["preset"] = preset
         return self._request("POST", "control", json=data)
 
     def stop_valve(self) -> Dict[str, Any]:
@@ -344,21 +346,23 @@ class SteveClient:
         data = self._request("GET", "presets")
         return [PresetConfig.from_dict(p) for p in data]
 
-    def load_preset(self, preset: Union[str, int]) -> Dict[str, Any]:
+    def load_preset(self, preset: int) -> Dict[str, Any]:
         """
         Load a preset configuration.
         
         Args:
-            preset: Preset name or index (0-3)
+            preset: Preset index (0-3)
         
         Returns:
             Response data
         
         Example:
-            >>> steve.load_preset("smooth")
-            >>> steve.load_preset(1)
+            >>> steve.load_preset(0)  # Load first preset
+            >>> steve.load_preset(1)  # Load second preset
         """
-        data = {"preset": preset if isinstance(preset, str) else str(preset)}
+        if not isinstance(preset, int) or preset < 0 or preset > 3:
+            raise SteveValidationError("preset must be an integer from 0 to 3")
+        data = {"preset": preset}
         return self._request("POST", "control", json=data)
 
     def save_preset(

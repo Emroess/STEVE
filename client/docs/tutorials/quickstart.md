@@ -62,15 +62,15 @@ print(f"Mode: {status['mode']}")
 Try different haptic feels:
 
 ```python
-# Load smooth preset
-client.load_preset("smooth")
-print("✓ Loaded 'smooth' preset")
+# Load light preset (index 0)
+client.load_preset(0)
+print("✓ Loaded 'light' preset (index 0)")
 
 time.sleep(2)
 
-# Try tight preset
-client.load_preset("tight")
-print("✓ Loaded 'tight' preset")
+# Try heavy preset (index 2)
+client.load_preset(2)
+print("✓ Loaded 'heavy' preset (index 2)")
 ```
 
 ## Step 6: Update Parameters
@@ -164,8 +164,8 @@ def main():
     status = client.get_status()
     print(f"Position: {status['pos_deg']:.2f}°")
     
-    # Load preset
-    client.load_preset("smooth")
+    # Load preset (0=light, 1=medium, 2=heavy, 3=industrial)
+    client.load_preset(0)
     time.sleep(2)
     
     # Update parameters

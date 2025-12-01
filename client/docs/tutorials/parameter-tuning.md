@@ -144,7 +144,7 @@ import time
 # Connect and start
 client = SteveClient("192.168.1.100")
 client.connect()
-client.load_preset("medium")
+client.load_preset(1)  # Load medium preset
 client.enable_motor()
 client.start_valve()
 
@@ -377,8 +377,8 @@ client.update_config(**config.to_dict())
 ### 1. Always Start with a Preset
 
 ```python
-# Start with closest preset
-client.load_preset("medium")
+# Start with closest preset (0=light, 1=medium, 2=heavy, 3=industrial)
+client.load_preset(1)
 
 # Then tune incrementally
 tuner.set_viscous(0.12)
@@ -405,8 +405,8 @@ from pysteve.control import DataRecorder
 
 recorder = DataRecorder(client, client.streamer)
 
-# Record baseline
-client.load_preset("medium")
+# Record baseline (0=light, 1=medium, 2=heavy, 3=industrial)
+client.load_preset(1)
 recorder.start_recording()
 time.sleep(5)
 recorder.stop_recording()

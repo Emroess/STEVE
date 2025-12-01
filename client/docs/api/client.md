@@ -231,18 +231,18 @@ client.update_config(
 
 ### Presets
 
-#### `load_preset(name: str) -> None`
+#### `load_preset(preset: int) -> None`
 
-Load predefined configuration preset.
+Load predefined configuration preset by index.
 
 ```python
-client.load_preset("smooth")   # Options: "smooth", "medium", "tight"
+client.load_preset(0)  # 0=light, 1=medium, 2=heavy, 3=industrial
 ```
 
 **Parameters**:
-- `name` (str): Preset name ("smooth", "medium", "tight")
+- `preset` (int): Preset index (0-3)
 
-**Raises**: `ValueError` for invalid preset name
+**Raises**: `SteveValidationError` if preset not in range 0-3
 
 #### `save_preset(slot: int, config: ValveConfig) -> None`
 
@@ -374,7 +374,7 @@ client.connect()
 try:
     # Setup
     client.enable_motor()
-    client.load_preset("medium")
+    client.load_preset(1)  # Load medium preset
     client.start_valve()
     
     # Monitor

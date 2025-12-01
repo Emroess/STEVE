@@ -190,7 +190,7 @@ def main():
     # Connect to STEVE
     client = SteveClient("192.168.1.100")
     client.connect()
-    client.load_preset("smooth")
+    client.load_preset(0)  # Load light preset
     client.enable_motor()
     client.start_valve()
     

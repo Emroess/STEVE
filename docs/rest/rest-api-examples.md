@@ -139,9 +139,9 @@ class SteveClient:
         """Stop valve control."""
         return self._request("POST", "control", {"action": "stop"})
     
-    def load_preset(self, preset_name: str) -> Dict:
-        """Load a preset configuration."""
-        return self._request("POST", "control", {"preset": preset_name})
+    def load_preset(self, preset_index: int) -> Dict:
+        """Load a preset configuration by index (0-3)."""
+        return self._request("POST", "control", {"preset": preset_index})
     
     def get_presets(self) -> list:
         """Get all available presets."""
@@ -903,9 +903,9 @@ def run_test_sequence(steve: SteveClient):
     # 2. Test each preset
     presets = steve.get_presets()
     for preset in presets:
-        print(f"2. Testing preset: {preset['name']}")
+        print(f"2. Testing preset: {preset['name']} (index {preset['index']})")
         
-        steve.load_preset(preset['name'])
+        steve.load_preset(preset['index'])
         steve.start()
         time.sleep(2.0)
         

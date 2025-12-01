@@ -15,7 +15,6 @@
 #include "valve_presets.h"
 #include "valve_config.h"
 #include "odrive_manager.h"
-#include "performance_manager.h"
 #include "network_manager.h"
 #include "stream_server.h"
 #include "board.h"
@@ -368,6 +367,8 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
     return;
   }
 
+  /* Build a new config based on current config, applying all field updates */
+  struct valve_config new_cfg = ctx->config;
   uint32_t field_mask = 0U;
   
   /* Assume root is object */
@@ -388,18 +389,13 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
 
     jsmntok_t *val_tok = &t[i + 1];
     float value = 0.0f;
-    status_t status;
 
     if (jsoneq(body, &t[i], "viscous") == 0) {
       if (!rest_token_float(body, val_tok, &value)) {
         rest_send_json_error(tpcb, 400, "invalid_viscous");
         return;
       }
-      status = valve_set_damping(ctx, value);
-      if (status != STATUS_OK) {
-        rest_send_json_error(tpcb, rest_map_status_to_http(status), "viscous_update_failed");
-        return;
-      }
+      new_cfg.hil_b_viscous_nm_s_per_rad = value;
       field_mask |= CFG_FIELD_VISCOUS;
       i++;
     } else if (jsoneq(body, &t[i], "coulomb") == 0) {
@@ -407,11 +403,7 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
         rest_send_json_error(tpcb, 400, "invalid_coulomb");
         return;
       }
-      status = valve_set_friction(ctx, value);
-      if (status != STATUS_OK) {
-        rest_send_json_error(tpcb, rest_map_status_to_http(status), "coulomb_update_failed");
-        return;
-      }
+      new_cfg.hil_tau_c_coulomb_nm = value;
       field_mask |= CFG_FIELD_COULOMB;
       i++;
     } else if (jsoneq(body, &t[i], "wall_stiffness") == 0) {
@@ -419,11 +411,7 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
         rest_send_json_error(tpcb, 400, "invalid_wall_stiffness");
         return;
       }
-      status = valve_set_wall_stiffness(ctx, value);
-      if (status != STATUS_OK) {
-        rest_send_json_error(tpcb, rest_map_status_to_http(status), "wall_stiffness_update_failed");
-        return;
-      }
+      new_cfg.hil_k_w_wall_stiffness_nm_per_turn = value;
       field_mask |= CFG_FIELD_WALL_STIFFNESS;
       i++;
     } else if (jsoneq(body, &t[i], "wall_damping") == 0) {
@@ -431,11 +419,7 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
         rest_send_json_error(tpcb, 400, "invalid_wall_damping");
         return;
       }
-      status = valve_set_wall_damping(ctx, value);
-      if (status != STATUS_OK) {
-        rest_send_json_error(tpcb, rest_map_status_to_http(status), "wall_damping_update_failed");
-        return;
-      }
+      new_cfg.hil_c_w_wall_damping_nm_s_per_turn = value;
       field_mask |= CFG_FIELD_WALL_DAMPING;
       i++;
     } else if (jsoneq(body, &t[i], "smoothing") == 0) {
@@ -443,11 +427,7 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
         rest_send_json_error(tpcb, 400, "invalid_smoothing");
         return;
       }
-      status = valve_set_epsilon(ctx, value);
-      if (status != STATUS_OK) {
-        rest_send_json_error(tpcb, rest_map_status_to_http(status), "smoothing_update_failed");
-        return;
-      }
+      new_cfg.hil_eps_smoothing = value;
       field_mask |= CFG_FIELD_SMOOTHING;
       i++;
     } else if (jsoneq(body, &t[i], "torque_limit") == 0) {
@@ -455,23 +435,24 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
         rest_send_json_error(tpcb, 400, "invalid_torque");
         return;
       }
-      status = valve_set_torque_limit(ctx, value);
-      if (status != STATUS_OK) {
-        rest_send_json_error(tpcb, rest_map_status_to_http(status), "torque_limit_update_failed");
+      new_cfg.torque_limit_nm = value;
+      field_mask |= CFG_FIELD_TORQUE_LIMIT;
+      i++;
+    } else if (jsoneq(body, &t[i], "travel") == 0) {
+      if (!rest_token_float(body, val_tok, &value)) {
+        rest_send_json_error(tpcb, 400, "invalid_travel");
         return;
       }
-      field_mask |= CFG_FIELD_TORQUE_LIMIT;
+      /* Travel is open_pos - closed_pos, so set open_pos = closed_pos + travel */
+      new_cfg.open_position_deg = new_cfg.closed_position_deg + value;
+      field_mask |= CFG_FIELD_OPEN_POS;
       i++;
     } else if (jsoneq(body, &t[i], "open_pos") == 0) {
       if (!rest_token_float(body, val_tok, &value)) {
         rest_send_json_error(tpcb, 400, "invalid_open_pos");
         return;
       }
-      status = valve_set_open_position(ctx, value);
-      if (status != STATUS_OK) {
-        rest_send_json_error(tpcb, rest_map_status_to_http(status), "open_pos_update_failed");
-        return;
-      }
+      new_cfg.open_position_deg = value;
       field_mask |= CFG_FIELD_OPEN_POS;
       i++;
     } else if (jsoneq(body, &t[i], "closed_pos") == 0) {
@@ -479,11 +460,7 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
         rest_send_json_error(tpcb, 400, "invalid_closed_pos");
         return;
       }
-      status = valve_set_closed_position(ctx, value);
-      if (status != STATUS_OK) {
-        rest_send_json_error(tpcb, rest_map_status_to_http(status), "closed_pos_update_failed");
-        return;
-      }
+      new_cfg.closed_position_deg = value;
       field_mask |= CFG_FIELD_CLOSED_POS;
       i++;
     }
@@ -491,6 +468,13 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
 
   if (field_mask == 0U) {
     rest_send_json_error(tpcb, 400, "no_fields");
+    return;
+  }
+
+  /* Validate and stage/apply the complete config atomically */
+  status_t status = valve_haptic_stage_config(ctx, &new_cfg, field_mask);
+  if (status != STATUS_OK) {
+    rest_send_json_error(tpcb, rest_map_status_to_http(status), "config_update_failed");
     return;
   }
 
@@ -555,34 +539,13 @@ void rest_api_handle_post_control(struct tcp_pcb *tpcb, char *body, int len) {
       }
       i++;
     } else if (jsoneq(body, &t[i], "preset") == 0) {
-      if (!rest_token_string(body, val_tok, token_buf, sizeof(token_buf))) {
+      if (!rest_token_int(body, val_tok, &preset)) {
         rest_send_json_error(tpcb, 400, "invalid_preset");
         return;
       }
 
-      // Match preset by name (case-insensitive)
-      preset = -1;
-      for (int preset_idx = 0; preset_idx < VALVE_PRESET_COUNT; preset_idx++) {
-        // Simple case-insensitive comparison
-        const char *a = token_buf;
-        const char *b = preset_params[preset_idx].name;
-        bool match = true;
-        for (int j = 0; a[j] || b[j]; j++) {
-          char ca = a[j] >= 'A' && a[j] <= 'Z' ? a[j] + 32 : a[j];
-          char cb = b[j] >= 'A' && b[j] <= 'Z' ? b[j] + 32 : b[j];
-          if (ca != cb) {
-            match = false;
-            break;
-          }
-        }
-        if (match) {
-          preset = preset_idx;
-          break;
-        }
-      }
-      
-      if (preset < 0) {
-        rest_send_json_error(tpcb, 400, "unsupported_preset");
+      if (preset < 0 || preset >= VALVE_PRESET_COUNT) {
+        rest_send_json_error(tpcb, 400, "invalid_preset_index");
         return;
       }
       has_preset = 1U;
@@ -1145,77 +1108,7 @@ void rest_api_handle_get_can(struct tcp_pcb *tpcb) {
   rest_send_response(tpcb, 200, "application/json", resp);
 }
 
-/*
- * rest_api_handle_get_performance - Handle GET /api/v1/performance
- * Returns performance monitoring statistics
- */
-void rest_api_handle_get_performance(struct tcp_pcb *tpcb) {
-  struct perfmon_snapshot snapshot;
-  
-  status_t status = perf_get_stats(&snapshot);
-  if (status != STATUS_OK) {
-    rest_send_json_error(tpcb, rest_map_status_to_http(status), "perf_stats_failed");
-    return;
-  }
 
-  char resp[768];
-  char pos_rms_buf[24], vel_rms_buf[24], tau_rms_buf[24];
-  char pos_pp_buf[24], vel_pp_buf[24];
-  char total_mean_buf[24], physics_mean_buf[24];
-
-  rest_format_float(pos_rms_buf, sizeof(pos_rms_buf), snapshot.motion.pos_rms, 6U);
-  rest_format_float(vel_rms_buf, sizeof(vel_rms_buf), snapshot.motion.vel_rms, 6U);
-  rest_format_float(tau_rms_buf, sizeof(tau_rms_buf), snapshot.motion.tau_rms, 6U);
-  rest_format_float(pos_pp_buf, sizeof(pos_pp_buf), snapshot.motion.pos_peak_to_peak, 6U);
-  rest_format_float(vel_pp_buf, sizeof(vel_pp_buf), snapshot.motion.vel_peak_to_peak, 6U);
-  rest_format_float(total_mean_buf, sizeof(total_mean_buf), snapshot.timing.total_mean_us, 1U);
-  rest_format_float(physics_mean_buf, sizeof(physics_mean_buf), snapshot.timing.physics_mean_us, 1U);
-
-  snprintf(resp, sizeof(resp),
-    "{"
-    "\"sample_count\":%u,"
-    "\"motion\":{"
-      "\"pos_rms\":%s,"
-      "\"vel_rms\":%s,"
-      "\"tau_rms\":%s,"
-      "\"pos_peak_to_peak\":%s,"
-      "\"vel_peak_to_peak\":%s,"
-      "\"zero_cross_rate_hz\":%d"
-    "},"
-    "\"timing\":{"
-      "\"total_min_us\":%u,"
-      "\"total_max_us\":%u,"
-      "\"total_mean_us\":%s,"
-      "\"physics_min_us\":%u,"
-      "\"physics_max_us\":%u,"
-      "\"physics_mean_us\":%s"
-    "},"
-    "\"guard\":{"
-      "\"torque_clamps\":%lu,"
-      "\"rate_limits\":%lu,"
-      "\"stability_events\":%lu"
-    "}"
-    "}",
-    snapshot.sample_count,
-    pos_rms_buf,
-    vel_rms_buf,
-    tau_rms_buf,
-    pos_pp_buf,
-    vel_pp_buf,
-    (int)(snapshot.motion.zero_cross_rate_hz + 0.5f),
-    snapshot.timing.total_min_us,
-    snapshot.timing.total_max_us,
-    total_mean_buf,
-    snapshot.timing.physics_min_us,
-    snapshot.timing.physics_max_us,
-    physics_mean_buf,
-    (unsigned long)snapshot.guard.torque_clamps,
-    (unsigned long)snapshot.guard.rate_limits,
-    (unsigned long)snapshot.guard.stability_events
-  );
-
-  rest_send_response(tpcb, 200, "application/json", resp);
-}
 
 void rest_api_handle_get_stream(struct tcp_pcb *tpcb) {
   ethernet_stream_stats_t stats;

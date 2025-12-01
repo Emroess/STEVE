@@ -56,8 +56,8 @@ Start valve control:
 # Start valve with default configuration
 client.start_valve()
 
-# Or load a preset first
-client.load_preset("smooth")  # Options: "smooth", "medium", "tight"
+# Or load a preset first (0=light, 1=medium, 2=heavy, 3=industrial)
+client.load_preset(0)
 client.start_valve()
 ```
 
@@ -151,9 +151,10 @@ with SteveClient("192.168.1.100") as client:
 ### Common Presets
 
 ```python
-client.load_preset("smooth")  # Low damping, easy to turn
-client.load_preset("medium")  # Balanced parameters
-client.load_preset("tight")   # High damping, stiff feel
+client.load_preset(0)  # Light - Low damping, easy to turn
+client.load_preset(1)  # Medium - Balanced parameters
+client.load_preset(2)  # Heavy - High damping, stiff feel
+client.load_preset(3)  # Industrial - Maximum resistance
 ```
 
 ### Parameter Ranges

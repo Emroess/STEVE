@@ -122,11 +122,9 @@ from pysteve import SteveClient
 client = SteveClient("192.168.1.100")
 client.connect()
 
-# Load preset by name
-client.load_preset("smooth")
-
-# Or by index (0-3)
+# Load preset by index (0=light, 1=medium, 2=heavy, 3=industrial)
 client.load_preset(0)
+client.load_preset(1)
 ```
 
 ### Custom Configuration

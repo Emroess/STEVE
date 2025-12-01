@@ -299,18 +299,20 @@ client.update_config(
 
 ### Preset Not Found
 
-**Symptom**: `ValueError: Unknown preset 'xyz'`
+**Symptom**: `SteveValidationError: preset must be an integer from 0 to 3`
 
-**Solution**: Use valid preset names
+**Solution**: Use valid preset indices (0-3)
 ```python
 # Valid presets
-client.load_preset("smooth")
-client.load_preset("medium")
-client.load_preset("tight")
+client.load_preset(0)  # Light (butterfly/faucet)
+client.load_preset(1)  # Medium (ball valve)
+client.load_preset(2)  # Heavy (gate valve)
+client.load_preset(3)  # Industrial (globe/gas)
 
-# Or check available presets
-presets = client.list_presets()
-print(f"Available: {presets}")
+# Check available presets
+presets = client.get_presets()
+for p in presets:
+    print(f"{p.index}: {p.name}")
 ```
 
 ### Configuration Not Applied

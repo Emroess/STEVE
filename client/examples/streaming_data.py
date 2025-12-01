@@ -29,7 +29,7 @@ def main():
     print("\nEnabling motor and starting valve...")
     client.enable_motor()
     time.sleep(1.0)
-    client.start_valve("smooth")
+    client.start_valve(0)  # Start with light preset
     print("✓ Valve running")
 
     # Create streamer

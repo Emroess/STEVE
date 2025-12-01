@@ -349,14 +349,14 @@ Content-Type: application/json
 ```json
 {
   "action": "start",
-  "preset": "smooth"
+  "preset": 0
 }
 ```
 
 **Request - Apply Preset (no start/stop):**
 ```json
 {
-  "preset": "default"
+  "preset": 1
 }
 ```
 
@@ -365,14 +365,13 @@ Content-Type: application/json
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action` | string | No | "start" or "stop" |
-| `preset` | string | No | Preset name (case-insensitive) |
+| `preset` | integer | No | Preset index (0-3) |
 
 **Available Presets:**
-- `default` - Standard configuration
-- `smooth` - Low friction, light damping
-- `stiff` - High stiffness
-- `heavy` - High damping
-- Custom presets you've saved
+- `0` - Light (butterfly/faucet)
+- `1` - Medium (ball valve)
+- `2` - Heavy (gate valve)
+- `3` - Industrial (globe/gas)
 
 **Response:**
 ```json
