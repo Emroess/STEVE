@@ -5,8 +5,8 @@
  * Used by both CLI and HTTP API to ensure consistent behavior.
  */
 
-#include "valve_manager.h"
 #include "config/valve.h"
+#include "valve_manager.h"
 #include "valve_presets.h"
 
 status_t

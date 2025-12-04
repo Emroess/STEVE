@@ -4,19 +4,21 @@
  * Haptic valve simulation control loop and state machine.
  */
 
+#include <stdbool.h>
+#include <string.h>
+
+#include "arm_math.h"
+#include "stm32h7xx.h"
+#include "stm32h753xx.h"
+
+#include "board.h"
+#include "config/board.h"
+#include "drivers/fdcan.h"
+#include "protocols/can_simple.h"
+#include "valve_filters.h"
 #include "valve_haptic.h"
 #include "valve_physics.h"
 #include "valve_presets.h"
-#include "valve_filters.h"
-#include "protocols/can_simple.h"
-#include "drivers/fdcan.h"
-#include "board.h"
-#include "config/board.h"
-#include "stm32h7xx.h"
-#include "stm32h753xx.h"
-#include "arm_math.h"
-#include <string.h>
-#include <stdbool.h>
 
 /* TIM6 handle (basic timer for valve control loop) */
 static TIM_TypeDef *htim6 = TIM6;
@@ -54,10 +56,12 @@ static bool velocity_filters_initialized = false;
 
 
 
-/* Simple exponential smoothing filter for velocity and other signals in the control loop */
-static inline float simple_lowpass(float input, float *state, float alpha) {
-    *state = alpha * input + (1.0f - alpha) * (*state);
-    return *state;
+/* Simple exponential smoothing filter for velocity and other signals */
+static inline float
+simple_lowpass(float input, float *state, float alpha)
+{
+	*state = alpha * input + (1.0f - alpha) * (*state);
+	return *state;
 }
 
 /* Enter critical section by disabling interrupts for thread-safe configuration updates */
@@ -359,37 +363,29 @@ status_t valve_haptic_init(struct valve_context *ctx, struct can_simple_handle *
 }
 
 /*
- * valve_haptic_load_preset - Load valve configuration from preset preset
+ * valve_haptic_load_preset - Load preset configuration
  *
- * Simplified API that accepts preset level (light/medium/heavy/industrial)
- * and travel range, then generates complete physics configuration.
- *
- * @param ctx: Valve context
- * @param preset: Resistance level (VALVE_PRESET_LIGHT, MEDIUM, HEAVY, INDUSTRIAL)
- * @param travel_degrees: Total rotation range (e.g., 90, 180)
- * @return: STATUS_OK on success, error on invalid parameters
+ * Generates physics parameters from preset index and travel range.
  */
-
-/* Load preset configuration to set up valve physics and limits for different resistance levels */
-status_t valve_haptic_load_preset(struct valve_context *ctx, valve_preset_t preset, float travel_degrees)
+status_t
+valve_haptic_load_preset(struct valve_context *ctx, int preset, float travel_degrees)
 {
-    if (ctx == NULL) {
-        return STATUS_ERROR_INVALID_PARAM;
-    }
-    
-	float prev_deg_per_turn = (ctx->config.degrees_per_turn > 0.0f) ?
-	ctx->config.degrees_per_turn : VALVE_DEFAULT_DEGREES_PER_TURN;
+	float prev_deg_per_turn;
+	status_t result;
 
-    /* Generate configuration from preset preset */
-    status_t result = valve_preset_from_preset(preset, travel_degrees, &ctx->config);
-    if (result != STATUS_OK) {
-        return result;
-    }
+	if (ctx == NULL)
+		return STATUS_ERROR_INVALID_PARAM;
+
+	prev_deg_per_turn = (ctx->config.degrees_per_turn > 0.0f) ?
+	    ctx->config.degrees_per_turn : VALVE_DEFAULT_DEGREES_PER_TURN;
+
+	result = valve_preset_from_preset(preset, travel_degrees, &ctx->config);
+	if (result != STATUS_OK)
+		return result;
 
 	ctx->config.degrees_per_turn = prev_deg_per_turn;
-    
-    /* Validate generated configuration */
-    return valve_preset_validate(&ctx->config);
+
+	return valve_preset_validate(&ctx->config);
 }
 
 /* Stage configuration changes for atomic application during runtime to avoid disrupting control */
@@ -699,21 +695,14 @@ static void valve_handle_can_failure(struct valve_context *ctx, status_t error_c
  */
 
 /*
- * valve_process_encoder_data: Process encoder data and update state
- *
- * Read encoder data from cached S1 broadcasts and update state.
- * Updates position, velocity, and diagnostic information in the valve state.
- * S1 automatically broadcasts encoder data at 1kHz - no polling needed.
- *
- * @param state: Pointer to valve state structure to update
- * @param cfg:   Pointer to valve configuration for filter thresholds
- * @return: STATUS_OK if processing should continue with fresh data,
- *          STATUS_ERROR_BUFFER_EMPTY if cached data is unavailable,
- *          STATUS_ERROR_TIMEOUT on CAN communication errors after max retries
+ * Reads cached encoder data from ODrive broadcasts and updates state.
+ * The S1 endpoint broadcasts at 1kHz, allowing the control loop to
+ * run synchronously without blocking on CAN transactions.
  */
 
 /* Process incoming encoder data from ODrive to update position and velocity estimates */
-static status_t valve_process_encoder_data(struct valve_state *state)
+static status_t
+valve_process_encoder_data(struct valve_state *state)
 {
 	struct can_simple_encoder_estimates obs;
 	uint32_t age_ms = UINT32_MAX;
@@ -861,26 +850,25 @@ static void valve_update_diagnostics(struct valve_state *state, float torque, ui
 }
 
 /*
- * valve_haptic_process: Main control loop processing
- *
- * Execute one iteration of the haptic valve control loop at fixed 1ms intervals.
- * Processes encoder data, calculates physics, applies limits and safety checks,
- * and updates diagnostics. Must be called exactly once per timer interrupt.
- *
- * @param ctx: Pointer to valve context containing state, config, and filters
+ * Core haptic control loop, called from TIM6 ISR at 1kHz.
+ * The fixed-rate execution is critical for stability - variable timing
+ * would cause the discrete-time physics model to diverge from reality.
  */
-
-/* Execute the main haptic valve control loop iteration, processing sensor data and computing torque commands */
-void valve_haptic_process(struct valve_context *ctx)
+void
+valve_haptic_process(struct valve_context *ctx)
 {
-	struct valve_state *state = &ctx->state;
+	struct valve_state *state;
+	struct valve_config *cfg;
+	uint32_t t_start;
 
-	if ((state->status & VALVE_STATE_RUNNING) == 0) return;
+	state = &ctx->state;
+	if ((state->status & VALVE_STATE_RUNNING) == 0)
+		return;
 
 	valve_apply_staged_config(ctx);
-	struct valve_config *cfg = &ctx->config;
+	cfg = &ctx->config;
 
-	uint32_t t_start = dwt_get_cycles();
+	t_start = dwt_get_cycles();
 
 	/* Process encoder data and check for fresh samples */
 	status_t encoder_status = valve_process_encoder_data(state);
@@ -1023,63 +1011,56 @@ void TIM6_DAC_IRQHandler(void)
 }
 
 /* Get pointer to current valve state for external monitoring and diagnostics */
-struct valve_state *valve_haptic_get_state(struct valve_context *ctx)
+struct valve_state *
+valve_haptic_get_state(struct valve_context *ctx)
 {
-    return &ctx->state;
+	return &ctx->state;
 }
 
 /* Get pointer to current valve configuration for inspection and modification */
-struct valve_config *valve_haptic_get_config(struct valve_context *ctx)
+struct valve_config *
+valve_haptic_get_config(struct valve_context *ctx)
 {
-    return &ctx->config;
+	return &ctx->config;
 }
 
 /*
- * valve_haptic_get_loop_timing - Get loop execution timing statistics
- *
- * Returns: STATUS_OK if statistics available, STATUS_ERROR_NOT_INITIALIZED if no samples
- * 
- * @param ctx: Valve context
- * @param min_us: Output - minimum loop time in microseconds
- * @param avg_us: Output - average loop time in microseconds
- * @param max_us: Output - maximum loop time in microseconds
+ * Returns loop execution timing for performance monitoring.
+ * Used to detect overruns that could cause control instability -
+ * if avg_us exceeds 1000, the loop cannot keep up with its 1kHz rate.
  */
-
-/* Retrieve timing statistics for the control loop to monitor performance and detect overruns */
 status_t
-valve_haptic_get_loop_timing(struct valve_context *ctx, uint32_t *min_us, uint32_t *avg_us, uint32_t *max_us)
+valve_haptic_get_loop_timing(struct valve_context *ctx, uint32_t *min_us,
+    uint32_t *avg_us, uint32_t *max_us)
 {
-if (ctx == NULL || min_us == NULL || avg_us == NULL || max_us == NULL) {
-return STATUS_ERROR_INVALID_PARAM;
-}
+	struct valve_state *state;
 
-struct valve_state *state = &ctx->state;
+	if (ctx == NULL || min_us == NULL || avg_us == NULL || max_us == NULL)
+		return STATUS_ERROR_INVALID_PARAM;
 
-if (state->diag.timing_sample_count == 0U) {
-return STATUS_ERROR_NOT_INITIALIZED;
-}
+	state = &ctx->state;
+	if (state->diag.timing_sample_count == 0U)
+		return STATUS_ERROR_NOT_INITIALIZED;
 
-*min_us = state->diag.loop_time_min_us;
-*max_us = state->diag.loop_time_max_us;
-*avg_us = state->diag.loop_time_sum_us / state->diag.timing_sample_count;
+	*min_us = state->diag.loop_time_min_us;
+	*max_us = state->diag.loop_time_max_us;
+	*avg_us = state->diag.loop_time_sum_us / state->diag.timing_sample_count;
 
-return STATUS_OK;
+	return STATUS_OK;
 }
 
 /* Get pointer to the active valve context for global access in ISRs and callbacks */
-struct valve_context *valve_haptic_get_context(void)
+struct valve_context *
+valve_haptic_get_context(void)
 {
-    return active_valve_context;
+	return active_valve_context;
 }
 
 /*
- * Calculate settling time from recent perfmon data
- * 
- * Estimates time for velocity to decay to <5% of peak value
- * Returns settling time in milliseconds, or 0.0 if insufficient data
+ * Estimates how long the valve takes to stop moving after release.
+ * Used by tuning tools to characterize damping behavior and detect
+ * oscillatory instability before it becomes dangerous.
  */
-
-/* Estimate valve settling time based on performance monitoring data for stability analysis */
 float
 valve_haptic_calc_settling_time_ms(void)
 {

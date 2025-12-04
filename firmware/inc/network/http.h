@@ -1,8 +1,9 @@
-/**
-  * @file    network/http.h
-  * @author  STEVE firmware team
-  * @brief   HTTP server infrastructure for valve configuration and control
-  */
+/*
+ * http.h - HTTP server for valve configuration and control
+ *
+ * Provides REST API and web UI for valve state queries,
+ * configuration changes, and real-time telemetry.
+ */
 
 #ifndef NETWORK_HTTP_H
 #define NETWORK_HTTP_H
@@ -10,41 +11,30 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/**
- * @brief Initialize the HTTP server on port 8080
- * @return true if successful, false otherwise
- */
-bool ethernet_http_init(void);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-/**
- * @brief Stop the HTTP server
- */
-void ethernet_http_stop(void);
+/* Initialize HTTP server on port 8080 */
+bool	ethernet_http_init(void);
 
-/**
- * @brief Enable or disable HTTP logging to UART
- * @param enable true to enable logging, false to disable
- */
-void ethernet_http_enable_logging(bool enable);
+/* Stop HTTP server */
+void	ethernet_http_stop(void);
 
-/**
- * @brief Get current HTTP logging state
- * @return true if logging is enabled, false otherwise
- */
-bool ethernet_http_get_logging_enabled(void);
+/* Enable or disable HTTP request logging to UART */
+void	ethernet_http_enable_logging(bool);
 
-/**
- * @brief Get HTTP server status information
- * @param[out] running true if server is running
- * @param[out] active_connections number of active connections
- * @param[out] logging_enabled true if logging is enabled
- */
-void ethernet_http_get_status(bool *running, uint32_t *active_connections, bool *logging_enabled);
+/* Returns true if logging is enabled */
+bool	ethernet_http_get_logging_enabled(void);
 
-/**
- * @brief Process HTTP server tasks (if any)
- *        Note: lwIP callbacks handle most work, this is for periodic tasks
- */
-void ethernet_http_process(void);
+/* Get server status: running state, connection count, logging state */
+void	ethernet_http_get_status(bool *, uint32_t *, bool *);
+
+/* Process HTTP server tasks (periodic, most work done in callbacks) */
+void	ethernet_http_process(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* NETWORK_HTTP_H */

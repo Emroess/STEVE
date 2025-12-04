@@ -1,21 +1,23 @@
 /*
  * network_manager.c - Network service implementation
  *
- * Provides clean API abstraction over LwIP and Ethernet driver
+ * Provides clean API abstraction over LwIP and Ethernet driver.
  */
 
-#include "network/manager.h"
-#include "network/net_init.h"
-#include "network/ping.h"
-#include "network/http.h"
-#include "network/stream.h"
-#include "lwip/netif.h"
-#include "lwip/dhcp.h"
-#include "lwip/timeouts.h"
-#include "lwip/ip4_addr.h"
-#include "network/nvm.h"
 #include <stdio.h>
 #include <string.h>
+
+#include "lwip/dhcp.h"
+#include "lwip/ip4_addr.h"
+#include "lwip/netif.h"
+#include "lwip/timeouts.h"
+
+#include "network/http.h"
+#include "network/manager.h"
+#include "network/net_init.h"
+#include "network/nvm.h"
+#include "network/ping.h"
+#include "network/stream.h"
 
 extern struct netif gnetif;
 

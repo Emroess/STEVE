@@ -1,12 +1,13 @@
 /*
  * status_strings.c - Human-readable status code strings
  *
- * Provides unified error messages for CLI and HTTP API
- * ROM-based lookup table, zero RAM cost
+ * Provides unified error messages for CLI and HTTP API.
+ * ROM-based lookup table, zero RAM cost.
  */
 
-#include "status.h"
 #include <stddef.h>
+
+#include "status.h"
 
 /* Lookup table stored in ROM */
 static const char * const status_strings[] = {

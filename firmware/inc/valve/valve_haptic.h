@@ -1,59 +1,49 @@
 /*
- * valve_haptic.h
+ * valve_haptic.h - Haptic valve simulation using ODrive S1
  *
- * Haptic valve simulation using Odrive S1 as force-feedback actuator.
- * Control loop runs at 1000 Hz with float-based physics calculations.
- *
- * AUTONOMOUS OPERATION:
- * The valve control loop operates entirely independently from the main
- * application once started. It executes deterministically in the TIM6 ISR
- * at exactly 1kHz (1ms period). No periodic service calls are required.
+ * Control loop runs autonomously at 1000 Hz in TIM6 ISR.
+ * No periodic service calls required after valve_haptic_start().
  *
  * Usage:
- *   1. Initialize: valve_haptic_init()
- *   2. Configure: valve_haptic_load_preset(ctx, VALVE_PRESET_MEDIUM, 90.0f)
- *   3. Start: valve_haptic_start()  -> Begins autonomous 1kHz operation
- *   4. Stop: valve_haptic_stop()    -> Halts autonomous operation
- *
- * The control loop processes encoder feedback, calculates physics-based
- * torque commands, and sends them to the ODrive completely independently.
- * The main application can query status but does not need to service the loop.
+ *   1. valve_haptic_init() - Initialize hardware and state
+ *   2. valve_haptic_load_preset() - Load physics parameters
+ *   3. valve_haptic_start() - Begin autonomous 1kHz operation
+ *   4. valve_haptic_stop() - Halt operation
  */
 
 #ifndef VALVE_HAPTIC_H
 #define VALVE_HAPTIC_H
 
 #include <stdint.h>
+
+#include "config/valve.h"
 #include "status.h"
 #include "valve_filters.h"
-#include "config/valve.h"
 
-/* Valve preset presets - user-friendly resistance levels */
-typedef enum {
-    VALVE_PRESET_LIGHT = 0,       /* Butterfly/faucet - minimal resistance */
-    VALVE_PRESET_MEDIUM = 1,      /* Ball valve - moderate resistance */
-    VALVE_PRESET_HEAVY = 2,       /* Gate valve - substantial resistance */
-    VALVE_PRESET_INDUSTRIAL = 3   /* Globe/gas main - heavy industrial feel */
-} valve_preset_t;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Forward declarations */
 struct can_simple_handle;
 
+/* Valve preset indices */
+#define VALVE_PRESET_LIGHT		0	/* Butterfly/faucet */
+#define VALVE_PRESET_MEDIUM		1	/* Ball valve */
+#define VALVE_PRESET_HEAVY		2	/* Gate valve */
+#define VALVE_PRESET_INDUSTRIAL		3	/* Globe/gas main */
+
 /* Valve simulation states */
-typedef enum {
-    VALVE_STATE_IDLE = 0,
-    VALVE_STATE_INITIALIZING,
-    VALVE_STATE_RUNNING,
-    VALVE_STATE_ERROR
-} valve_state_t;
+#define VALVE_STATE_IDLE		0
+#define VALVE_STATE_INITIALIZING	1
+#define VALVE_STATE_RUNNING		2
+#define VALVE_STATE_ERROR		3
 
 /* Error types */
-typedef enum {
-    VALVE_ERROR_NONE = 0,
-    VALVE_ERROR_CAN,           /* CAN communication failure */
-    VALVE_ERROR_ODRIVE,        /* Odrive reported error */
-    VALVE_ERROR_LIMIT          /* Torque or position limit exceeded */
-} valve_error_t;
+#define VALVE_ERROR_NONE		0
+#define VALVE_ERROR_CAN			1	/* CAN communication failure */
+#define VALVE_ERROR_ODRIVE		2	/* ODrive reported error */
+#define VALVE_ERROR_LIMIT		3	/* Torque or position limit */
 
 /* Valve configuration (loaded from preset) */
 struct valve_config {
@@ -143,22 +133,27 @@ struct valve_context {
     struct valve_config staged_config;
     uint32_t staged_field_mask;
     volatile uint8_t staged_pending;
-    /* Autonomous operation: control loop executes directly in TIM6 ISR */
 };
 
 /* Public API */
-status_t valve_haptic_init(struct valve_context *ctx, struct can_simple_handle *odrive);
-status_t valve_haptic_load_preset(struct valve_context *ctx, valve_preset_t preset, float travel_degrees);
-status_t valve_haptic_start(struct valve_context *ctx);  /* Start autonomous 1kHz control loop */
-void valve_haptic_stop(struct valve_context *ctx);       /* Stop autonomous control loop */
-void valve_haptic_process(struct valve_context *ctx);    /* Internal: called by TIM6 ISR */
-void valve_haptic_timer_isr(void);                       /* Internal: TIM6 ISR callback */
-void TIM6_DAC_IRQHandler(void);                          /* TIM6 interrupt handler */
-struct valve_state *valve_haptic_get_state(struct valve_context *ctx);
-struct valve_config *valve_haptic_get_config(struct valve_context *ctx);
+status_t valve_haptic_init(struct valve_context *, struct can_simple_handle *);
+status_t valve_haptic_load_preset(struct valve_context *, int, float);
+status_t valve_haptic_start(struct valve_context *);
+void	valve_haptic_stop(struct valve_context *);
+void	valve_haptic_process(struct valve_context *);
+void	valve_haptic_timer_isr(void);
+void	TIM6_DAC_IRQHandler(void);
+struct valve_state *valve_haptic_get_state(struct valve_context *);
+struct valve_config *valve_haptic_get_config(struct valve_context *);
 struct valve_context *valve_haptic_get_context(void);
-status_t valve_haptic_stage_config(struct valve_context *ctx, const struct valve_config *cfg, uint32_t field_mask);
-float valve_haptic_calc_settling_time_ms(void);          /* Calculate settling time from perfmon data */
-status_t valve_haptic_get_loop_timing(struct valve_context *ctx, uint32_t *min_us, uint32_t *avg_us, uint32_t *max_us); /* Get timing statistics */
+status_t valve_haptic_stage_config(struct valve_context *, const struct valve_config *,
+	    uint32_t);
+float	valve_haptic_calc_settling_time_ms(void);
+status_t valve_haptic_get_loop_timing(struct valve_context *, uint32_t *, uint32_t *,
+	    uint32_t *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* VALVE_HAPTIC_H */

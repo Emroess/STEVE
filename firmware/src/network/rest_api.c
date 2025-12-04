@@ -1,40 +1,41 @@
-/**
-  * @file    rest_api.c
-  * @author  STEVE firmware team
-  * @brief   REST API handlers for valve configuration and control
-  */
+/*
+ * rest_api.c - REST API handlers for valve configuration and control
+ *
+ * Implements JSON-based endpoints for:
+ * - Valve status queries and configuration
+ * - Preset management
+ * - ODrive telemetry and control
+ * - Streaming data configuration
+ */
 
-/* Includes ------------------------------------------------------------------*/
-#include "network/rest.h"
-#include "network/http.h"
-#include "lwip/tcp.h"
-#define JSMN_STATIC
-#include "jsmn.h"
-#include "valve_manager.h"
-#include "valve_presets.h"
-#include "config/valve.h"
-#include "odrive_manager.h"
-#include "network/manager.h"
-#include "network/stream.h"
-#include "board.h"
-#include "drivers/uart.h"
-#include "config/network.h"
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
 #include <ctype.h>
 #include <math.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-/* Private define ------------------------------------------------------------*/
-/* Buffer sizes moved to network_config.h */
+#include "lwip/tcp.h"
 
-/* Private variables ---------------------------------------------------------*/
-static struct uart_handle *rest_uart = NULL;
+#define JSMN_STATIC
+#include "jsmn.h"
+
+#include "board.h"
+#include "config/network.h"
+#include "config/valve.h"
+#include "drivers/uart.h"
+#include "network/http.h"
+#include "network/manager.h"
+#include "network/rest.h"
+#include "network/stream.h"
+#include "odrive_manager.h"
+#include "valve_manager.h"
+#include "valve_presets.h"
+
+static struct uart_handle *rest_uart;
 
 #include "http_fs_data.h"
 
-/* Private function prototypes -----------------------------------------------*/
 static struct uart_handle *rest_get_uart(void);
 static void rest_log(const char *fmt, ...);
 static void rest_format_float(char *dst, size_t dst_len, float value, uint8_t precision);
@@ -573,7 +574,7 @@ void rest_api_handle_post_control(struct tcp_pcb *tpcb, char *body, int len) {
     float prev_deg = (staged_cfg.degrees_per_turn > 0.0f) ?
         staged_cfg.degrees_per_turn : VALVE_DEFAULT_DEGREES_PER_TURN;
 
-    if (valve_preset_from_preset((valve_preset_t)preset, 90.0f, &staged_cfg) != STATUS_OK) {
+    if (valve_preset_from_preset(preset, 90.0f, &staged_cfg) != STATUS_OK) {
       rest_send_json_error(tpcb, 400, "preset_invalid");
       return;
     }
@@ -758,7 +759,7 @@ void rest_api_handle_post_presets(struct tcp_pcb *tpcb, char *body, int len) {
     return;
   }
 
-  // Update preset directly in global array (no stack allocation)
+  /* Update preset directly in global array (no stack allocation) */
   struct preset_params *target = &preset_params[index];
 
   if (save_current) {
@@ -770,30 +771,30 @@ void rest_api_handle_post_presets(struct tcp_pcb *tpcb, char *body, int len) {
     target->default_travel_deg = cfg->open_position_deg - cfg->closed_position_deg;
     target->torque_limit_nm = cfg->torque_limit_nm;
     target->hil_eps_smoothing = cfg->hil_eps_smoothing;
-    // Keep existing name when saving current config
+    /* Keep existing name when saving current config */
   } else {
-    // Validate values
+    /* Validate values */
     if (viscous < 0.0f || coulomb < 0.0f || wall_stiffness < 0.0f || wall_damping < 0.0f || travel <= 0.0f) {
       rest_send_json_error(tpcb, 400, "invalid_values");
       return;
     }
 
-    // Update physics parameters
+    /* Update physics parameters */
     target->hil_b_viscous_nm_s_per_rad = viscous;
     target->hil_tau_c_coulomb_nm = coulomb;
     target->hil_k_w_wall_stiffness_nm_per_turn = wall_stiffness;
     target->hil_c_w_wall_damping_nm_s_per_turn = wall_damping;
     target->default_travel_deg = travel;
-    
-    // Update torque limit and smoothing if provided
+
+    /* Update torque limit and smoothing if provided */
     if (has_torque) {
       target->torque_limit_nm = torque_limit;
     }
     if (has_smoothing) {
       target->hil_eps_smoothing = smoothing;
     }
-    
-    // Update name if provided
+
+    /* Update name if provided */
     size_t name_len = strlen(name);
     if (name_len > 0U) {
       if (name_len >= sizeof(target->name)) {
@@ -804,15 +805,19 @@ void rest_api_handle_post_presets(struct tcp_pcb *tpcb, char *body, int len) {
     }
   }
 
-  // Send response BEFORE the slow NVM save operation
+  /* Send response BEFORE the slow NVM save operation */
   rest_send_response(tpcb, 200, "application/json", "{\"status\":\"ok\"}");
-  
-  // Now perform the blocking flash write (this may take 100ms+)
-  // The TCP response has already been queued, so the connection won't timeout
+
+  /*
+   * Now perform the blocking flash write (this may take 100ms+)
+   * The TCP response has already been queued, so the connection won't timeout
+   */
   status_t save_status = valve_presets_save(preset_params);
   if (save_status != STATUS_OK) {
-    // Can't send error response at this point since we already sent success
-    // Log it instead
+    /*
+     * Can't send error response at this point since we already sent success
+     * Log it instead
+     */
     rest_log("[REST] Warning: Preset save to NVM failed after sending response\r\n");
   }
 }

@@ -8,10 +8,15 @@
 #ifndef VALVE_MANAGER_H
 #define VALVE_MANAGER_H
 
+#include <stdint.h>
+
+#include "status.h"
 #include "valve_haptic.h"
 #include "valve_presets.h"
-#include "status.h"
-#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*
  * Valve control operations
@@ -50,6 +55,11 @@ struct valve_context * valve_get_context(void);
 /*
  * Valve configuration staging - atomic multi-field update
  */
-status_t valve_stage_config(struct valve_context *ctx, const struct valve_config *cfg, uint32_t field_mask);
+status_t valve_stage_config(struct valve_context *, const struct valve_config *,
+    uint32_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* VALVE_MANAGER_H */

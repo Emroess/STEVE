@@ -6,31 +6,35 @@
  * with rounding by adding 0.5f before casting: (int)(float_value + 0.5f)
  */
 
-#include <string.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
+#include <string.h>
+
+#include "arm_math.h"
+
+#include "lwip/ip_addr.h"
+#include "lwip/netif.h"
+#include "lwip/timeouts.h"
+
+#include "board.h"
 #include "cli.h"
 #include "cli_internal.h"
-#include "board.h"
+#include "config/all.h"
+#include "drivers/uart.h"
+#include "ethernetif.h"
+#include "network/http.h"
+#include "network/manager.h"
+#include "network/net_init.h"
+#include "network/nvm.h"
+#include "network/ping.h"
+#include "network/stream.h"
+#include "odrive_manager.h"
 #include "protocols/can_simple.h"
 #include "valve_manager.h"
 #include "valve_nvm.h"
 #include "valve_presets.h"
-#include "network/manager.h"
-#include "network/nvm.h"
-#include "odrive_manager.h"
-#include "drivers/uart.h"
-#include "arm_math.h"
-#include "network/stream.h"
-#include "network/http.h"
-#include "network/net_init.h"
-#include "ethernetif.h"
-#include "network/ping.h"
-#include "config/all.h"
-#include "lwip/ip_addr.h"
-#include "lwip/netif.h"
-#include "lwip/timeouts.h"
+
 extern struct netif gnetif;
 
 /* Forward declaration of hard fault info structure from stm32h7xx_it.c */
@@ -337,18 +341,20 @@ cli_cmd_setip(struct cli_context *ctx, int argc, char *argv[])
 static int
 cli_cmd_nvm_status(struct cli_context *ctx, int argc, char *argv[])
 {
+	const struct network_nvm_config *flash_config;
+	struct network_nvm_config config;
+	bool loaded;
+
 	(void)argc;
 	(void)argv;
-	
-	struct network_nvm_config config;
-	bool loaded = network_nvm_load(&config);
-	
+
+	loaded = network_nvm_load(&config);
+
 	uart_write_string(ctx->uart, "\r\nNVM Network Config Status:\r\n", 100);
 	uart_printf(ctx->uart, "Loaded: %s\r\n", loaded ? "YES" : "NO");
-	
-	// Read raw flash data
-	const struct network_nvm_config *flash_config =
-	    (const struct network_nvm_config *)NETWORK_CONFIG_ADDR;
+
+	/* Read raw flash data */
+	flash_config = (const struct network_nvm_config *)NETWORK_CONFIG_ADDR;
 	uart_write_string(ctx->uart, "\r\nRaw Flash Data:\r\n", 100);
 	uart_printf(ctx->uart, "Magic: 0x%08lX\r\n", (unsigned long)flash_config->magic);
 	uart_printf(ctx->uart, "Version: %lu\r\n", (unsigned long)flash_config->version);
@@ -356,13 +362,15 @@ cli_cmd_nvm_status(struct cli_context *ctx, int argc, char *argv[])
 	uart_printf(ctx->uart, "IP: %.16s\r\n", flash_config->ip_addr);
 	uart_printf(ctx->uart, "Netmask: %.16s\r\n", flash_config->netmask);
 	uart_printf(ctx->uart, "Gateway: %.16s\r\n", flash_config->gateway);
-	
+
 	if (loaded) {
+		uint32_t expected;
+
 		uart_printf(ctx->uart, "\r\nLoaded Config:\r\n", 100);
 		uart_printf(ctx->uart, "Magic: 0x%08lX (expected 0x%08lX)\r\n", (unsigned long)config.magic, (unsigned long)NETWORK_NVM_MAGIC);
 		uart_printf(ctx->uart, "Version: %lu (expected %lu)\r\n", (unsigned long)config.version, (unsigned long)NETWORK_NVM_VERSION);
 		uart_printf(ctx->uart, "Checksum: 0x%08lX\r\n", (unsigned long)config.checksum);
-		uint32_t expected = network_nvm_calculate_checksum(&config);
+		expected = network_nvm_calculate_checksum(&config);
 		uart_printf(ctx->uart, "Expected Checksum: 0x%08lX\r\n", (unsigned long)expected);
 		uart_printf(ctx->uart, "IP: %s\r\n", config.ip_addr);
 		uart_printf(ctx->uart, "Netmask: %s\r\n", config.netmask);
