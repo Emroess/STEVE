@@ -27,7 +27,6 @@ extern void SysTick_Handler(void);
 extern void USART3_IRQHandler(void);
 extern void TIM6_DAC_IRQHandler(void);
 extern void ETH_IRQHandler(void);
-extern void valve_haptic_pendsv_handler(void);
 
 /*
  * Cortex-M7 core exception handler prototypes
@@ -215,7 +214,7 @@ DebugMon_Handler(void)
 void
 PendSV_Handler(void)
 {
-	valve_haptic_pendsv_handler();
+	/* Not used in this firmware */
 }
 
 /*

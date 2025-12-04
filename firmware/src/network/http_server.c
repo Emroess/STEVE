@@ -5,11 +5,13 @@
   */
 
 /* Includes ------------------------------------------------------------------*/
-#include "http_server.h"
-#include "rest_api.h"
+#include "network/http.h"
+#include "network/rest.h"
 #include "lwip/tcp.h"
 #include "valve_haptic.h"
 #include "valve_presets.h"
+#include "config/valve.h"
+#include "config/network.h"
 #include "board.h"
 #include "drivers/uart.h"
 #include <string.h>
@@ -20,23 +22,7 @@
 #include <math.h>
 
 /* Private define ------------------------------------------------------------*/
-#define HTTP_PORT 8080
-#define MAX_REQ_SIZE 2048
-#define MAX_RESP_SIZE 2048
-#define MAX_JSON_TOKENS 64
-#define HTTP_CONN_TIMEOUT_MS 5000U
-#define HTTP_METHOD_MAX_LEN 8
-#define HTTP_URI_MAX_LEN 64
 #define HTTP_HEADER_TERMINATOR "\r\n\r\n"
-#define HTTP_MAX_CONNECTIONS    8U
-#define CFG_FIELD_VISCOUS        (1U << 0)
-#define CFG_FIELD_COULOMB        (1U << 1)
-#define CFG_FIELD_WALL_STIFFNESS (1U << 2)
-#define CFG_FIELD_WALL_DAMPING   (1U << 3)
-#define CFG_FIELD_SMOOTHING      (1U << 4)
-#define CFG_FIELD_TORQUE_LIMIT   (1U << 5)
-#define CFG_FIELD_OPEN_POS       (1U << 6)
-#define CFG_FIELD_CLOSED_POS     (1U << 7)
 
 /* Private typedef -----------------------------------------------------------*/
 typedef struct {

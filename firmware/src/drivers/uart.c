@@ -21,7 +21,7 @@
 #include "uart.h"
 #include "status.h"
 #include "board.h"
-#include "board_config.h"
+#include "config/board.h"
 
 /* Hardware register access (this file is on whitelist) */
 #include "stm32h7xx.h"

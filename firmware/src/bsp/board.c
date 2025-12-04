@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "board.h"
-#include "board_config.h"
+#include "config/board.h"
 #include "status.h"
 
 /* ONLY board.c includes hardware headers */

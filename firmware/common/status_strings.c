@@ -38,3 +38,23 @@ status_to_string(status_t status)
 	
 	return status_strings[status];
 }
+
+/* Valve state lookup table stored in ROM */
+static const char * const valve_state_strings[] = {
+	"IDLE",           /* 0: VALVE_STATE_IDLE */
+	"INITIALIZING",   /* 1: VALVE_STATE_INITIALIZING */
+	"RUNNING",        /* 2: VALVE_STATE_RUNNING */
+	"ERROR",          /* 3: VALVE_STATE_ERROR */
+};
+
+#define VALVE_STATE_STRINGS_COUNT \
+	(sizeof(valve_state_strings) / sizeof(valve_state_strings[0]))
+
+const char *
+valve_state_to_string(int state)
+{
+	if (state < 0 || (unsigned int)state >= VALVE_STATE_STRINGS_COUNT)
+		return "UNKNOWN";
+	
+	return valve_state_strings[state];
+}

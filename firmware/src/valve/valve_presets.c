@@ -43,7 +43,7 @@ status_t valve_presets_init(void)
 
 /* Save presets to NVM */
 status_t valve_presets_save(const struct preset_params new_presets[VALVE_PRESET_COUNT]) {
-    for (int i = 0; i < VALVE_PRESET_COUNT; i++) {
+    for (uint32_t i = 0; i < VALVE_PRESET_COUNT; i++) {
         preset_params[i] = new_presets[i];
         preset_params[i].name[sizeof(preset_params[i].name) - 1U] = '\0';
     }
@@ -52,7 +52,7 @@ status_t valve_presets_save(const struct preset_params new_presets[VALVE_PRESET_
 
 /* Get a single preset */
 status_t valve_preset_get(int index, struct preset_params *out) {
-    if (index < 0 || index >= VALVE_PRESET_COUNT) {
+    if (index < 0 || (uint32_t)index >= VALVE_PRESET_COUNT) {
         return STATUS_ERROR_INVALID_PARAM;
     }
     *out = preset_params[index];
@@ -61,7 +61,7 @@ status_t valve_preset_get(int index, struct preset_params *out) {
 
 /* Set a single preset and save to NVM */
 status_t valve_preset_set(int index, const struct preset_params *in) {
-    if (index < 0 || index >= VALVE_PRESET_COUNT) {
+    if (index < 0 || (uint32_t)index >= VALVE_PRESET_COUNT) {
         return STATUS_ERROR_INVALID_PARAM;
     }
     preset_params[index] = *in;

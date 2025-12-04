@@ -1,11 +1,11 @@
 /**
-  * @file    http_server.h
+  * @file    network/http.h
   * @author  STEVE firmware team
   * @brief   HTTP server infrastructure for valve configuration and control
   */
 
-#ifndef HTTP_SERVER_H
-#define HTTP_SERVER_H
+#ifndef NETWORK_HTTP_H
+#define NETWORK_HTTP_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -47,4 +47,4 @@ void ethernet_http_get_status(bool *running, uint32_t *active_connections, bool 
  */
 void ethernet_http_process(void);
 
-#endif /* HTTP_SERVER_H */
+#endif /* NETWORK_HTTP_H */

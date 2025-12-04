@@ -4,16 +4,16 @@
  * Provides clean API abstraction over LwIP and Ethernet driver
  */
 
-#include "network_manager.h"
-#include "net_init.h"
-#include "ping.h"
-#include "http_server.h"
-#include "stream_server.h"
+#include "network/manager.h"
+#include "network/net_init.h"
+#include "network/ping.h"
+#include "network/http.h"
+#include "network/stream.h"
 #include "lwip/netif.h"
 #include "lwip/dhcp.h"
 #include "lwip/timeouts.h"
 #include "lwip/ip4_addr.h"
-#include "network_nvm.h"
+#include "network/nvm.h"
 #include <stdio.h>
 #include <string.h>
 

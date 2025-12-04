@@ -17,17 +17,17 @@
 #include "valve_manager.h"
 #include "valve_nvm.h"
 #include "valve_presets.h"
-#include "network_manager.h"
-#include "network_nvm.h"
+#include "network/manager.h"
+#include "network/nvm.h"
 #include "odrive_manager.h"
-#include "performance_manager.h"
 #include "drivers/uart.h"
 #include "arm_math.h"
-#include "network/stream_server.h"
-#include "network/http_server.h"
+#include "network/stream.h"
+#include "network/http.h"
 #include "network/net_init.h"
 #include "ethernetif.h"
 #include "network/ping.h"
+#include "config/all.h"
 #include "lwip/ip_addr.h"
 #include "lwip/netif.h"
 #include "lwip/timeouts.h"
@@ -187,25 +187,7 @@ cli_cmd_valve_status(struct cli_context *ctx, int argc, char *argv[])
 	(void)argc;
 	(void)argv;
 	struct valve_state *state = valve_get_state(ctx->valve_ctx);
-	const char *state_str;
-	
-	switch (state->status) {
-	case VALVE_STATE_IDLE:
-		state_str = "IDLE";
-		break;
-	case VALVE_STATE_INITIALIZING:
-		state_str = "INITIALIZING";
-		break;
-	case VALVE_STATE_RUNNING:
-		state_str = "RUNNING";
-		break;
-	case VALVE_STATE_ERROR:
-		state_str = "ERROR";
-		break;
-	default:
-		state_str = "UNKNOWN";
-		break;
-	}
+	const char *state_str = valve_state_to_string(state->status);
 	
 	uart_printf(ctx->uart, "\r\nValve Status:\r\n");
 	uart_printf(ctx->uart, "State:              %s\r\n", state_str);
@@ -1080,8 +1062,8 @@ cli_cmd_valve_preset_show(struct cli_context *ctx, int argc, char *argv[])
 	const struct preset_params *presets = valve_get_presets();
 	
 	uart_write_string(ctx->uart, "\r\nValve Presets:\r\n", 100);
-	for (int i = 0; i < VALVE_PRESET_COUNT; i++) {
-		uart_printf(ctx->uart, "\r\nPreset %d: %s\r\n", i, presets[i].name);
+	for (uint32_t i = 0; i < VALVE_PRESET_COUNT; i++) {
+		uart_printf(ctx->uart, "\r\nPreset %u: %s\r\n", i, presets[i].name);
 		uart_printf(ctx->uart, "  Torque limit:     %.3f N·m\r\n", presets[i].torque_limit_nm);
 		uart_printf(ctx->uart, "  Default travel:   %.1f deg\r\n", presets[i].default_travel_deg);
 		uart_printf(ctx->uart, "  Viscous damping:  %.3f N·m·s/rad\r\n", presets[i].hil_b_viscous_nm_s_per_rad);
@@ -1225,7 +1207,7 @@ cli_init(struct cli_context *ctx, struct uart_handle *uart, struct fdcan_handle 
 	/* Initialize CAN simple for Odrive communication */
 	struct can_simple_config can_cfg = {
 		.can = can,
-		.node_id = 1,  /* Odrive node ID */
+		.node_id = ODRIVE_DEFAULT_NODE_ID,
 		.timeout_ms = 1000,  /* 1 second timeout */
 	};
 	status = can_simple_init(&ctx->odrive, &can_cfg);

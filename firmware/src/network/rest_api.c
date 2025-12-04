@@ -5,20 +5,20 @@
   */
 
 /* Includes ------------------------------------------------------------------*/
-#include "rest_api.h"
-#include "http_server.h"
+#include "network/rest.h"
+#include "network/http.h"
 #include "lwip/tcp.h"
 #define JSMN_STATIC
 #include "jsmn.h"
 #include "valve_manager.h"
-#include "valve_haptic.h"
 #include "valve_presets.h"
-#include "valve_config.h"
+#include "config/valve.h"
 #include "odrive_manager.h"
-#include "network_manager.h"
-#include "stream_server.h"
+#include "network/manager.h"
+#include "network/stream.h"
 #include "board.h"
 #include "drivers/uart.h"
+#include "config/network.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,8 +27,7 @@
 #include <math.h>
 
 /* Private define ------------------------------------------------------------*/
-#define MAX_RESP_SIZE 2048
-#define MAX_JSON_TOKENS 64
+/* Buffer sizes moved to network_config.h */
 
 /* Private variables ---------------------------------------------------------*/
 static struct uart_handle *rest_uart = NULL;
@@ -233,7 +232,7 @@ void rest_api_handle_get_index(struct tcp_pcb *tpcb) {
 }
 
 void rest_api_handle_get_config(struct tcp_pcb *tpcb) {
-  struct valve_context *ctx = valve_haptic_get_context();
+  struct valve_context *ctx = valve_get_context();
   if (!ctx) {
     rest_send_json_error(tpcb, 503, "valve_uninitialized");
     return;
@@ -284,7 +283,7 @@ void rest_api_handle_get_config(struct tcp_pcb *tpcb) {
 }
 
 void rest_api_handle_get_status(struct tcp_pcb *tpcb) {
-  struct valve_context *ctx = valve_haptic_get_context();
+  struct valve_context *ctx = valve_get_context();
   if (!ctx) {
     rest_send_json_error(tpcb, 503, "valve_uninitialized");
     return;
@@ -361,7 +360,7 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
     return;
   }
   
-  struct valve_context *ctx = valve_haptic_get_context();
+  struct valve_context *ctx = valve_get_context();
   if (ctx == NULL) {
     rest_send_json_error(tpcb, 503, "valve_uninitialized");
     return;
@@ -472,7 +471,7 @@ void rest_api_handle_post_config(struct tcp_pcb *tpcb, char *body, int len) {
   }
 
   /* Validate and stage/apply the complete config atomically */
-  status_t status = valve_haptic_stage_config(ctx, &new_cfg, field_mask);
+  status_t status = valve_stage_config(ctx, &new_cfg, field_mask);
   if (status != STATUS_OK) {
     rest_send_json_error(tpcb, rest_map_status_to_http(status), "config_update_failed");
     return;
@@ -500,7 +499,7 @@ void rest_api_handle_post_control(struct tcp_pcb *tpcb, char *body, int len) {
     return;
   }
   
-  struct valve_context *ctx = valve_haptic_get_context();
+  struct valve_context *ctx = valve_get_context();
   if (ctx == NULL) {
     rest_send_json_error(tpcb, 503, "valve_uninitialized");
     return;
@@ -544,8 +543,8 @@ void rest_api_handle_post_control(struct tcp_pcb *tpcb, char *body, int len) {
         return;
       }
 
-      if (preset < 0 || preset >= VALVE_PRESET_COUNT) {
-        rest_send_json_error(tpcb, 400, "unsupported_preset");
+      if (preset < 0 || (uint32_t)preset >= VALVE_PRESET_COUNT) {
+        rest_send_json_error(tpcb, 400, "invalid_preset_index");
         return;
       }
       has_preset = 1U;
@@ -580,7 +579,7 @@ void rest_api_handle_post_control(struct tcp_pcb *tpcb, char *body, int len) {
     }
     staged_cfg.degrees_per_turn = prev_deg;
 
-    status_t stage_status = valve_haptic_stage_config(ctx, &staged_cfg, preset_mask);
+    status_t stage_status = valve_stage_config(ctx, &staged_cfg, preset_mask);
     if (stage_status != STATUS_OK) {
       rest_send_json_error(tpcb, rest_map_status_to_http(stage_status), "preset_failed");
       return;
@@ -619,7 +618,7 @@ void rest_api_handle_get_presets(struct tcp_pcb *tpcb) {
   ptr += written;
   remaining -= written;
 
-  for (int i = 0; i < VALVE_PRESET_COUNT; i++) {
+  for (uint32_t i = 0; i < VALVE_PRESET_COUNT; i++) {
     char viscous_buf[24], coulomb_buf[24], stiff_buf[24], damp_buf[24], travel_buf[24], torque_buf[24], smoothing_buf[24];
     rest_format_float(viscous_buf, sizeof(viscous_buf), preset_params[i].hil_b_viscous_nm_s_per_rad, 4U);
     rest_format_float(coulomb_buf, sizeof(coulomb_buf), preset_params[i].hil_tau_c_coulomb_nm, 4U);
@@ -630,10 +629,10 @@ void rest_api_handle_get_presets(struct tcp_pcb *tpcb) {
     rest_format_float(smoothing_buf, sizeof(smoothing_buf), preset_params[i].hil_eps_smoothing, 6U);
 
     written = snprintf(ptr, (size_t)remaining,
-      "{\"index\":%d,\"name\":\"%s\",\"viscous\":%s,\"coulomb\":%s,\"wall_stiffness\":%s,"
+      "{\"index\":%lu,\"name\":\"%s\",\"viscous\":%s,\"coulomb\":%s,\"wall_stiffness\":%s,"
       "\"wall_damping\":%s,\"travel\":%s,\"torque_limit\":%s,\"smoothing\":%s}%s",
-      i, preset_params[i].name, viscous_buf, coulomb_buf, stiff_buf, damp_buf, travel_buf, torque_buf, smoothing_buf,
-      (i < VALVE_PRESET_COUNT - 1) ? "," : "");
+      (unsigned long)i, preset_params[i].name, viscous_buf, coulomb_buf, stiff_buf, damp_buf, travel_buf, torque_buf, smoothing_buf,
+      (i < VALVE_PRESET_COUNT - 1U) ? "," : "");
     if (written < 0 || written >= remaining) {
       rest_send_json_error(tpcb, 500, "response_overflow");
       return;
@@ -667,7 +666,7 @@ void rest_api_handle_post_presets(struct tcp_pcb *tpcb, char *body, int len) {
     return;
   }
 
-  struct valve_context *ctx = valve_haptic_get_context();
+  struct valve_context *ctx = valve_get_context();
   if (ctx == NULL) {
     rest_send_json_error(tpcb, 503, "valve_uninitialized");
     return;
@@ -754,7 +753,7 @@ void rest_api_handle_post_presets(struct tcp_pcb *tpcb, char *body, int len) {
     }
   }
 
-  if (index < 0 || index >= VALVE_PRESET_COUNT) {
+  if (index < 0 || (uint32_t)index >= VALVE_PRESET_COUNT) {
     rest_send_json_error(tpcb, 400, "invalid_index");
     return;
   }
@@ -823,7 +822,7 @@ void rest_api_handle_post_presets(struct tcp_pcb *tpcb, char *body, int len) {
  * Returns ODrive status, encoder, and telemetry data
  */
 void rest_api_handle_get_odrive(struct tcp_pcb *tpcb) {
-  struct valve_context *ctx = valve_haptic_get_context();
+  struct valve_context *ctx = valve_get_context();
   if (ctx == NULL) {
     rest_send_json_error(tpcb, 503, "valve_uninitialized");
     return;
@@ -919,7 +918,7 @@ void rest_api_handle_post_odrive(struct tcp_pcb *tpcb, char *body, int len) {
     return;
   }
 
-  struct valve_context *ctx = valve_haptic_get_context();
+  struct valve_context *ctx = valve_get_context();
   if (ctx == NULL) {
     rest_send_json_error(tpcb, 503, "valve_uninitialized");
     return;
@@ -1029,7 +1028,7 @@ void rest_api_handle_post_odrive(struct tcp_pcb *tpcb, char *body, int len) {
  * Returns CAN bus status, encoder, and telemetry data
  */
 void rest_api_handle_get_can(struct tcp_pcb *tpcb) {
-  struct valve_context *ctx = valve_haptic_get_context();
+  struct valve_context *ctx = valve_get_context();
   if (ctx == NULL) {
     rest_send_json_error(tpcb, 503, "valve_uninitialized");
     return;

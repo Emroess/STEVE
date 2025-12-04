@@ -1,8 +1,10 @@
-#include "network_nvm.h"
+#include "network/nvm.h"
+#include "config/nvm.h"
+#include "drivers/flash_utils.h"
 #include "stm32h7xx_hal.h"
 #include <string.h>
 
-// CRC32 polynomial (standard)
+/* CRC32 polynomial (standard) - kept local as network uses different algorithm */
 #define CRC32_POLY 0xEDB88320
 
 uint32_t network_nvm_calculate_checksum(const struct network_nvm_config *config) {
@@ -18,60 +20,17 @@ uint32_t network_nvm_calculate_checksum(const struct network_nvm_config *config)
     return checksum;
 }
 
-/* Flash helper utilities */
-static uint32_t get_bank(uint32_t address)
-{
-    const uint32_t bank_split = FLASH_BASE + FLASH_BANK_SIZE;
-    return (address < bank_split) ? FLASH_BANK_1 : FLASH_BANK_2;
-}
-
-static uint32_t get_sector(uint32_t address)
-{
-    const uint32_t bank_base = (get_bank(address) == FLASH_BANK_1) ?
-        FLASH_BASE : (FLASH_BASE + FLASH_BANK_SIZE);
-    return (address - bank_base) / 0x20000U;  /* 128KB sectors within bank */
-}
+/* Flash helper utilities - now use shared functions from flash_utils.h */
 
 /* Erase NVM sector */
 static bool erase_nvm_sector(void) {
-    HAL_FLASH_Unlock();
-
-    const uint32_t bank = get_bank(NETWORK_CONFIG_ADDR);
-    FLASH_EraseInitTypeDef erase_init = {
-        .TypeErase = FLASH_TYPEERASE_SECTORS,
-        .Banks = bank,
-        .Sector = get_sector(NETWORK_CONFIG_ADDR),
-        .NbSectors = 1,
-        .VoltageRange = FLASH_VOLTAGE_RANGE_3  /* 2.7-3.6V */
-    };
-
-    uint32_t sector_error = 0;
-    HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&erase_init, &sector_error);
-
-    HAL_FLASH_Lock();
-
-    return (status == HAL_OK);
+    return (flash_erase_sector(NETWORK_CONFIG_ADDR) == STATUS_OK);
 }
 
 /* Program network config to flash */
 static bool program_network_config(const struct network_nvm_config *config) {
-    HAL_FLASH_Unlock();
-
-    HAL_StatusTypeDef status = HAL_OK;
-    const uint32_t *src = (const uint32_t *)config;  /* 256-bit aligned */
-    uint32_t addr = NETWORK_CONFIG_ADDR;
-
-    // Program 3 flashwords (96 bytes to cover 76-byte struct + padding)
-    for (size_t i = 0; i < 96; i += 32) {
-        status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_FLASHWORD, addr, (uint32_t)src);
-        if (status != HAL_OK) break;
-        src += 8;  /* 8 * 4 bytes = 32 */
-        addr += 32;
-    }
-
-    HAL_FLASH_Lock();
-
-    return (status == HAL_OK);
+    /* Use 96 bytes to cover 76-byte struct + padding (3 flash words) */
+    return (flash_program_data(NETWORK_CONFIG_ADDR, config, 96U) == STATUS_OK);
 }
 
 bool network_nvm_save(const struct network_nvm_config *config) {

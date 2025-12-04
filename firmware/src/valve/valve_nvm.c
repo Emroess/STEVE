@@ -6,15 +6,14 @@
  */
 
 #include "valve_nvm.h"
+#include "config/nvm.h"
+#include "drivers/flash_utils.h"
 #include "stm32h7xx_hal.h"
 #include <string.h>
 #include <stdint.h>
 #include <stddef.h>
 
-/* NVM data structure */
-#define NVM_VERSION 2  /* Increment when struct preset_params layout changes */
-#define NVM_PRESET_COUNT 4
-
+/* NVM data structure - uses defines from nvm_config.h */
 struct nvm_header {
     uint32_t version;
     uint32_t checksum;
@@ -23,10 +22,13 @@ struct nvm_header {
 
 struct nvm_data {
     struct nvm_header header;
-    struct preset_params presets[NVM_PRESET_COUNT];
+    struct preset_params presets[VALVE_NVM_PRESET_COUNT];
 };
 
-static const struct preset_params default_presets[NVM_PRESET_COUNT] = {
+/* Size of NVM data for flash operations */
+#define NVM_DATA_SIZE sizeof(struct nvm_data)
+
+static const struct preset_params default_presets[VALVE_NVM_PRESET_COUNT] = {
     /* VALVE_PRESET_LIGHT */
     {
         .name = "Light",
@@ -73,20 +75,11 @@ static const struct preset_params default_presets[NVM_PRESET_COUNT] = {
     }
 };
 
-/* Flash address for NVM data */
-extern uint8_t __nvm_data_start[];
-#define NVM_FLASH_ADDR ((uint32_t)&__nvm_data_start[0])
-#define NVM_DATA_SIZE sizeof(struct nvm_data)
+/* Flash address now defined in nvm_config.h as VALVE_NVM_FLASH_ADDR */
 
 /* CRC calculation for validation */
 static uint32_t calculate_checksum(const struct nvm_data *data) {
-    /* Simple XOR checksum for now; could use HAL_CRC if available */
-    uint32_t checksum = 0;
-    const uint8_t *ptr = (const uint8_t *)data;
-    for (size_t i = 0; i < sizeof(struct nvm_data); i++) {
-        checksum ^= ptr[i];
-    }
-    return checksum;
+    return flash_calculate_checksum(data, sizeof(struct nvm_data));
 }
 
 static void set_checksum(struct nvm_data *data) {
@@ -94,67 +87,26 @@ static void set_checksum(struct nvm_data *data) {
     data->header.checksum = calculate_checksum(data);
 }
 
-/* Flash helper utilities */
-static uint32_t get_bank(uint32_t address)
-{
-    const uint32_t bank_split = FLASH_BASE + FLASH_BANK_SIZE;
-    return (address < bank_split) ? FLASH_BANK_1 : FLASH_BANK_2;
-}
-
-static uint32_t get_sector(uint32_t address)
-{
-    const uint32_t bank_base = (get_bank(address) == FLASH_BANK_1) ?
-        FLASH_BASE : (FLASH_BASE + FLASH_BANK_SIZE);
-    return (address - bank_base) / 0x20000U;  /* 128KB sectors within bank */
-}
+/* Flash helper utilities - now use shared functions from flash_utils.h */
 
 /* Erase NVM sector */
 static status_t erase_nvm_sector(void) {
-    HAL_FLASH_Unlock();
-
-    const uint32_t bank = get_bank(NVM_FLASH_ADDR);
-    FLASH_EraseInitTypeDef erase_init = {
-        .TypeErase = FLASH_TYPEERASE_SECTORS,
-        .Banks = bank,
-        .Sector = get_sector(NVM_FLASH_ADDR),
-        .NbSectors = 1,
-        .VoltageRange = FLASH_VOLTAGE_RANGE_3  /* 2.7-3.6V */
-    };
-
-    uint32_t sector_error = 0;
-    HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&erase_init, &sector_error);
-
-    HAL_FLASH_Lock();
-
-    return (status == HAL_OK) ? STATUS_OK : STATUS_ERROR;
+    return flash_erase_sector(VALVE_NVM_FLASH_ADDR);
 }
 
 /* Program NVM data to flash */
 static status_t program_nvm_data(const struct nvm_data *data) {
-    HAL_FLASH_Unlock();
-
-    HAL_StatusTypeDef status = HAL_OK;
-    const uint32_t *src = (const uint32_t *)data;  /* 256-bit aligned */
-    uint32_t addr = NVM_FLASH_ADDR;
-
-    for (size_t i = 0; i < NVM_DATA_SIZE; i += 32) {
-        status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_FLASHWORD, addr, (uint32_t)src);
-        if (status != HAL_OK) break;
-        src += 8;  /* 8 * 4 bytes = 32 */
-        addr += 32;
-    }
-
-    HAL_FLASH_Lock();
-
-    return (status == HAL_OK) ? STATUS_OK : STATUS_ERROR;
+    /* Round up to multiple of 32 bytes for flash word alignment */
+    size_t aligned_size = ((NVM_DATA_SIZE + 31U) / 32U) * 32U;
+    return flash_program_data(VALVE_NVM_FLASH_ADDR, data, aligned_size);
 }
 
 /* Load NVM data from flash */
 static status_t load_nvm_data(struct nvm_data *data) {
-    memcpy(data, (const void *)NVM_FLASH_ADDR, NVM_DATA_SIZE);
+    memcpy(data, (const void *)VALVE_NVM_FLASH_ADDR, NVM_DATA_SIZE);
 
     /* Validate version and checksum */
-    if (data->header.version != NVM_VERSION) {
+    if (data->header.version != VALVE_NVM_VERSION) {
         return STATUS_ERROR;
     }
 
@@ -180,7 +132,7 @@ status_t valve_nvm_init(void) {
     }
 
     /* Initialize with default presets */
-    data.header.version = NVM_VERSION;
+    data.header.version = VALVE_NVM_VERSION;
     data.header.write_count = 0;
 
     memcpy(data.presets, default_presets, sizeof(default_presets));
@@ -201,7 +153,7 @@ status_t valve_nvm_init(void) {
 }
 
 /* Load presets from NVM */
-status_t valve_nvm_load_presets(struct preset_params presets_out[NVM_PRESET_COUNT]) {
+status_t valve_nvm_load_presets(struct preset_params presets_out[VALVE_NVM_PRESET_COUNT]) {
     struct nvm_data data;
 
     if (load_nvm_data(&data) != STATUS_OK) {
@@ -218,13 +170,13 @@ const struct preset_params *valve_nvm_get_default_presets(void)
 }
 
 /* Save presets to NVM */
-status_t valve_nvm_save_presets(const struct preset_params presets_in[NVM_PRESET_COUNT]) {
+status_t valve_nvm_save_presets(const struct preset_params presets_in[VALVE_NVM_PRESET_COUNT]) {
     __attribute__((aligned(32))) struct nvm_data data;
 
     /* Load current data to preserve header */
     if (load_nvm_data(&data) != STATUS_OK) {
         /* If load fails, reinitialize header */
-        data.header.version = NVM_VERSION;
+        data.header.version = VALVE_NVM_VERSION;
         data.header.write_count = 0;
     }
 

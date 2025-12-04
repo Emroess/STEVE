@@ -13,11 +13,11 @@
 #include "lwip/init.h"
 #include "netif/etharp.h"
 #include "ethernetif.h"
-#include "net_init.h"
-#include "http_server.h"
+#include "network/net_init.h"
+#include "network/http.h"
 #include "board.h"
 #include "drivers/uart.h"
-#include "network_nvm.h"
+#include "network/nvm.h"
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/

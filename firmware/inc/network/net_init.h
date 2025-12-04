@@ -1,32 +1,21 @@
 /**
-  * @file    app_ethernet.h
+  * @file    net_init.h
   * @author  STEVE firmware team
-  * @brief   Header for app_ethernet.c module
+  * @brief   Network initialization and Ethernet processing
   */
 
-/* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __APP_ETHERNET_H
-#define __APP_ETHERNET_H
+#ifndef NET_INIT_H
+#define NET_INIT_H
 
 #ifdef __cplusplus
  extern "C" {
 #endif
 
-/* Includes ------------------------------------------------------------------*/
 #include "lwip/netif.h"
+#include "config/network.h"
 
-/* Exported types ------------------------------------------------------------*/
-/* Exported constants --------------------------------------------------------*/
-/* DHCP process states */
-#define DHCP_OFF                   (uint8_t) 0
-#define DHCP_START                 (uint8_t) 1
-#define DHCP_WAIT_ADDRESS          (uint8_t) 2
-#define DHCP_ADDRESS_ASSIGNED      (uint8_t) 3
-#define DHCP_TIMEOUT               (uint8_t) 4
-#define DHCP_LINK_DOWN             (uint8_t) 5
+/* DHCP states are now in config/network.h */
 
-/* Exported macro ------------------------------------------------------------*/
-/* Exported functions ------------------------------------------------------- */
 void ethernet_link_status_updated(struct netif *netif);
 void ethernet_init(void);
 void ethernet_process(void);
@@ -35,7 +24,7 @@ void ethernet_process(void);
 }
 #endif
 
-#endif /* __APP_ETHERNET_H */
+#endif /* NET_INIT_H */
 
 
 

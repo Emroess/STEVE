@@ -45,5 +45,11 @@ const struct preset_params * valve_get_presets(void);
  */
 struct valve_state * valve_get_state(struct valve_context *ctx);
 float valve_get_energy(struct valve_context *ctx);
+struct valve_context * valve_get_context(void);
+
+/*
+ * Valve configuration staging - atomic multi-field update
+ */
+status_t valve_stage_config(struct valve_context *ctx, const struct valve_config *cfg, uint32_t field_mask);
 
 #endif /* VALVE_MANAGER_H */

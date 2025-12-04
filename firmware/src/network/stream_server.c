@@ -18,10 +18,11 @@
 #include <stdarg.h>
 #include <math.h>
 #include <stdbool.h>
-#include "stream_server.h"
+#include "network/stream.h"
 #include "board.h"
 #include "valve_haptic.h"
 #include "drivers/uart.h"
+#include "config/network.h"
 
 /* Private typedef -----------------------------------------------------------*/
 typedef struct {
@@ -34,8 +35,7 @@ typedef struct {
 } stream_client_t;
 
 /* Private define ------------------------------------------------------------*/
-#define STREAM_PORT              8888
-#define MAX_STREAM_CLIENTS       6
+/* Network defines moved to network_config.h */
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
@@ -382,7 +382,7 @@ void ethernet_stream_process(void)
 
   uint32_t current_time = board_get_systick_ms();
 
-  for (int i = 0; i < MAX_STREAM_CLIENTS; i++) {
+  for (uint32_t i = 0; i < MAX_STREAM_CLIENTS; i++) {
     stream_client_t *client = &stream_clients[i];
     if (client->connected && client->pcb != NULL) {
       if ((current_time - client->last_stream_time) >= client->stream_interval_ms) {
@@ -411,7 +411,7 @@ static err_t stream_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
   }
 
   /* Find free client slot */
-  for (int i = 0; i < MAX_STREAM_CLIENTS; i++) {
+  for (uint32_t i = 0; i < MAX_STREAM_CLIENTS; i++) {
     if (!stream_clients[i].connected) {
       stream_clients[i].pcb = newpcb;
       stream_clients[i].connected = 1;
@@ -640,7 +640,7 @@ bool ethernet_stream_init(void)
 void ethernet_stream_stop(void)
 {
   /* Close all client connections */
-  for (int i = 0; i < MAX_STREAM_CLIENTS; i++) {
+  for (uint32_t i = 0; i < MAX_STREAM_CLIENTS; i++) {
     if (stream_clients[i].connected) {
       stream_disconnect(&stream_clients[i], stream_clients[i].pcb, "server stop");
     }

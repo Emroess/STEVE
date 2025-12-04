@@ -20,7 +20,7 @@
 
 #include <stdint.h>
 #include "status.h"
-#include "board_config.h"
+#include "config/board.h"
 
 /*
  * Board initialization and validation

@@ -10,8 +10,10 @@
 
 #include "valve_haptic.h"
 #include "valve_nvm.h"
+#include "config/nvm.h"
 
-#define VALVE_PRESET_COUNT 4
+/* Use preset count from nvm_config.h */
+#define VALVE_PRESET_COUNT VALVE_NVM_PRESET_COUNT
 
 /* Global preset parameters */
 extern struct preset_params preset_params[VALVE_PRESET_COUNT];

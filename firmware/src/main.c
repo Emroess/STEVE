@@ -9,6 +9,7 @@
 #include "network/net_init.h"
 #include "stm32h7xx_hal_conf.h"
 #include <string.h>
+#include "config/core.h"
 
 /*
  * main - Application entry point
